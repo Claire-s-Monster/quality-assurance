@@ -1,0 +1,188 @@
+{
+  "mcpServers": {
+    "agent-cache": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/agent-cache/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "agent-ecosystem": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/agent-ecosystem/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "claudecode-bash": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/claudecode-shell/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "design-system": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/design-system/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "git": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/git/development",
+        "pixi-git-server-lean",
+        "--repository",                                                                                                
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"                                           
+      ],
+      "env": {
+        "MCP_SERVER_ACTIVE": "true"
+      }
+    },
+    "knowledge-bridge": {
+      "type": "http",
+      "url": "http://127.0.0.1:4003/mcp",
+      "transport": "sse"
+    },
+    "knowledge-store": {
+      "type": "http",
+      "url": "http://127.0.0.1:4004/mcp",
+      "transport": "sse"
+    },
+    "llm-cli-runner": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/llm-cli-runner/development",
+        "-e", "default",
+        "serve"
+      ],
+      "cwd": "/home/memento/ClaudeCode/Servers/quality-assurance/development",
+      "env": {
+        "LOG_LEVEL": "INFO",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "disabled": false
+    },
+    "pixi-bash": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/pixi-shell/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "pytest-analyzer": {
+      "command": "pixi",
+      "args": [
+        "run",
+         "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/pytest-analyzer/development",
+        "mcp-server",
+        "--project-root",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "quality-assurance": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "resilience": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/resilience/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "serena-lean": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/serena/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "session-intelligence": {
+      "type": "http",
+      "url": "http://127.0.0.1:4002/mcp",
+      "transport": "sse"
+    },
+    "system-resource": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/system-resource/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "task-master": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/task-master/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    },
+    "workflow": {
+      "command": "pixi",
+      "args": [
+        "run",
+        "--manifest-path",
+        "/home/memento/ClaudeCode/Servers/workflow/development",
+        "lean-server",
+        "--repository",
+        "/home/memento/ClaudeCode/Servers/quality-assurance/development"
+      ]
+    }
+  }
+}

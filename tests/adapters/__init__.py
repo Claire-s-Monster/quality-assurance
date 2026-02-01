@@ -1,0 +1,1 @@
+"""Tests for quality assurance adapters."""
