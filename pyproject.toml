@@ -21,6 +21,8 @@ dependencies = []
 quality-assurance-server = "quality_assurance.server:main"
 quality-assurance = "quality_assurance.server:main"
 quality-assurance-lean = "quality_assurance.lean_server:main"
+quality-assurance-http = "quality_assurance.http_lean_server:main"
+quality-assurance-http-server = "quality_assurance.http_lean_server:main"
 
 # NOTE: Dependencies have been moved to [tool.pixi.*] sections below
 # This ensures PIXI-only dependency management compliance
@@ -204,6 +206,8 @@ pip = "*"  # Required for pixi-dependencies integration
 hatchling = ">=1.18.0"  # Required for editable installs
 fastmcp = "*"
 pydantic = ">=2.10"  # Data validation (required by FastMCP)
+fastapi = ">=0.115.0"  # HTTP transport for MCP server
+uvicorn = ">=0.31.0"   # ASGI server for HTTP transport
 
 [tool.pixi.pypi-dependencies]
 # Install project in editable mode
@@ -375,6 +379,10 @@ server = { cmd = "python -m quality_assurance.server", env = { PYTHONPATH = "src
 # Lean MCP Server (reduced context consumption)
 lean-server = { cmd = "python -m quality_assurance.lean_server", env = { PYTHONPATH = "src" } }
 lean-mcp = { cmd = "python -m quality_assurance.lean_server", env = { PYTHONPATH = "src" } }
+
+# HTTP/SSE MCP Server (lean transport on port 4106)
+http-server = { cmd = "python -m quality_assurance.http_lean_server", env = { PYTHONPATH = "src" } }
+http-lean-server = { cmd = "python -m quality_assurance.http_lean_server", env = { PYTHONPATH = "src" } }
 
 # Quality assurance tools and validation
 list-tasks = { cmd = "python -m quality_assurance.discovery", env = { PYTHONPATH = "src" } }
