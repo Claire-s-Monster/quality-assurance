@@ -2198,6 +2198,31 @@ def quality_get_server_info() -> Dict[str, Any]:
         }
 
 
+@app.tool()
+def quality_get_system_health() -> Dict[str, Any]:
+    """
+    Report server self-diagnosis: tool availability, adapter health, and whether
+    the pixi executable can be resolved.
+
+    Call this first when assessments return unexpected or empty results.
+
+    Returns:
+        SystemHealth payload with component status and performance metrics
+    """
+    try:
+        if not orchestration_service:
+            initialize_server()
+
+        health = container.quality_service.get_system_health()
+        return health.dict()
+
+    except Exception as e:
+        return {
+            "error": str(e),
+            "healthy": False
+        }
+
+
 # =============================================================================
 # SERVER INITIALIZATION AND LIFECYCLE
 # =============================================================================

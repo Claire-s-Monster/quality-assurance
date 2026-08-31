@@ -137,7 +137,25 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 violations, metrics = self._parse_lint_output(tool, stdout, target_path)
                 status = ExecutionStatus.SUCCESS if not violations else ExecutionStatus.WARNING
             else:
-                status = ExecutionStatus.FAILURE
+                if not self._is_execution_failure(result):
+                    # Tool ran and exited non-zero because it found violations.
+                    stdout = result.get("stdout", "")
+                    violations, metrics = self._parse_lint_output(tool, stdout, target_path)
+
+                if not violations:
+                    # Non-zero exit unexplained by any parsed finding: the analysis
+                    # did not happen. Never report a score for an unmeasured target.
+                    return self._create_error_result(
+                        tool=tool,
+                        assessment_type=QualityAssessmentType.LINT,
+                        start_time=start_time,
+                        execution_time_ms=execution_time_ms,
+                        error_msg=self._describe_execution_failure(result, pixi_task),
+                        target_path=target_path,
+                        pixi_task_used=pixi_task
+                    )
+
+                status = ExecutionStatus.WARNING
 
             return QualityAssessmentResult(
                 assessment_type=QualityAssessmentType.LINT,
@@ -149,7 +167,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 pixi_task_used=pixi_task,
                 target_path=target_path,
                 files_analyzed=metrics.total_lines // 50 if metrics.total_lines > 0 else 1,  # Estimate
-                raw_output=result.get("stdout", ""),
+                raw_output=result.get("stdout", "") + "\n" + result.get("stderr", ""),
                 parsed_metrics=metrics,
                 violations=violations,
                 recommendations=self._generate_lint_recommendations(violations, tool),
@@ -236,10 +254,23 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 violations, type_errors = self._parse_mypy_output(stdout, target_path)
                 status = ExecutionStatus.SUCCESS if type_errors == 0 else ExecutionStatus.WARNING
             else:
-                # Parse errors from stderr as well
-                stderr = result.get("stderr", "")
-                violations, type_errors = self._parse_mypy_output(stderr, target_path)
-                status = ExecutionStatus.FAILURE
+                if not self._is_execution_failure(result):
+                    # mypy exits non-zero when it finds type errors; parse both streams.
+                    combined = result.get("stdout", "") + "\n" + result.get("stderr", "")
+                    violations, type_errors = self._parse_mypy_output(combined, target_path)
+
+                if not violations:
+                    return self._create_error_result(
+                        tool=tool,
+                        assessment_type=QualityAssessmentType.TYPECHECK,
+                        start_time=start_time,
+                        execution_time_ms=execution_time_ms,
+                        error_msg=self._describe_execution_failure(result, pixi_task),
+                        target_path=target_path,
+                        pixi_task_used=pixi_task
+                    )
+
+                status = ExecutionStatus.WARNING
 
             metrics = QualityMetrics(
                 overall_score=max(0.0, 10.0 - (type_errors * 0.5)),
@@ -1182,6 +1213,47 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         recommendations.append("🔍 Run aggressive mode for more thorough detection (may have false positives)")
         
         return recommendations
+
+    @staticmethod
+    def _is_execution_failure(result: Dict[str, Any]) -> bool:
+        """Determine whether a pixi result means the tool never ran.
+
+        A non-zero exit does NOT imply execution failure: ruff exits 1 precisely
+        when it has violations to report, and mypy exits 1 when it finds type
+        errors. Those are successful runs with findings and must be parsed, not
+        turned into errors.
+
+        run_task's exception path returns exit_code=1, colliding with the
+        "found violations" code, so the exit code alone cannot discriminate.
+        The "error" key is only present on that path.
+        """
+        if result.get("error"):
+            return True
+
+        exit_code = result.get("exit_code")
+        # 0 = clean, 1 = tool ran and reported findings. Anything else
+        # (124 timeout, 126/127 not executable / not found, 2 usage error)
+        # means the tool did not complete a real analysis.
+        return exit_code not in (0, 1)
+
+    @staticmethod
+    def _describe_execution_failure(result: Dict[str, Any], pixi_task: str) -> str:
+        """Build a diagnostic carrying exit code and stderr through to the caller."""
+        parts = [f"Pixi task '{pixi_task}' did not complete an analysis"]
+
+        exit_code = result.get("exit_code")
+        if exit_code is not None:
+            parts.append(f"exit_code={exit_code}")
+
+        error = result.get("error")
+        if error:
+            parts.append(f"error={error}")
+
+        stderr = (result.get("stderr") or "").strip()
+        if stderr:
+            parts.append(f"stderr={stderr}")
+
+        return "; ".join(parts)
 
     def _create_error_result(
         self,

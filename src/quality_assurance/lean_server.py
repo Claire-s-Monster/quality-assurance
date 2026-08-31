@@ -39,7 +39,7 @@ class QualityAssuranceLeanMCP:
     """
     Lean MCP Interface for Quality Assurance Server.
 
-    Exposes 18 quality functions through 3 meta-tools with minimal context consumption.
+    Exposes 19 quality functions through 3 meta-tools with minimal context consumption.
     """
 
     def __init__(self, working_dir: str):
@@ -50,7 +50,7 @@ class QualityAssuranceLeanMCP:
         self.container = Container(working_dir=working_dir)
         self.orchestration_service = self.container.orchestration_service
 
-        # Build tool registry with all 18 quality functions
+        # Build tool registry with all 19 quality functions
         self.tool_registry = self._build_tool_registry()
 
         # Setup the 3 meta-tools
@@ -61,7 +61,7 @@ class QualityAssuranceLeanMCP:
         )
 
     def _build_tool_registry(self) -> Dict[str, Dict[str, Any]]:
-        """Build registry of all 18 quality assurance tools."""
+        """Build registry of all 19 quality assurance tools."""
         registry = {}
 
         # Core Assessment Functions (Functions 1-5)
@@ -518,7 +518,7 @@ class QualityAssuranceLeanMCP:
             },
         }
 
-        # Pixi-Quality Integration Functions (Functions 15-18)
+        # Pixi-Quality Integration Functions (Functions 15-19)
         registry["quality_execute_pixi_aware_assessment"] = {
             "description": "Execute quality assessment using pixi-aware task orchestration",
             "schema": {
@@ -626,13 +626,19 @@ class QualityAssuranceLeanMCP:
             },
         }
 
+        # Health & Diagnostics Function (Function 19)
+        registry["quality_get_system_health"] = {
+            "description": "Report server self-diagnosis: tool availability, adapter health, and whether the pixi executable can be resolved. Call this first when assessments return unexpected or empty results.",
+            "schema": {"type": "object", "properties": {}},
+        }
+
         return registry
 
     def _setup_meta_tools(self):
         """Setup the 3 meta-tools for dynamic discovery without filtering."""
 
         @self.app.tool(
-            description="Discover quality assurance tools for linting, type-checking, security scanning, and code quality analysis (18 tools). USE WHEN: checking code quality, running ruff/mypy/bandit, analyzing quality trends, generating quality reports"
+            description="Discover quality assurance tools for linting, type-checking, security scanning, and code quality analysis (19 tools). USE WHEN: checking code quality, running ruff/mypy/bandit, analyzing quality trends, generating quality reports"
         )
         def discover_tools(pattern: Optional[str] = None) -> Dict[str, Any]:
             """
@@ -652,7 +658,7 @@ class QualityAssuranceLeanMCP:
             - Baselines: quality_establish_baseline, quality_compare_against_baseline
             - Auto-fix: quality_apply_automated_fixes
 
-            This lean interface provides 18 quality tools, saving ~50-100K tokens
+            This lean interface provides 19 quality tools, saving ~50-100K tokens
             vs loading all tool schemas upfront.
 
             WORKFLOW:
@@ -662,14 +668,14 @@ class QualityAssuranceLeanMCP:
 
             Args:
                 pattern: Filter tools by name (e.g., "lint", "security", "baseline")
-                         Leave empty or None to see all 18 tools
+                         Leave empty or None to see all 19 tools
 
             Returns:
                 Dictionary containing:
                 - available_tools: List of tools, each with:
                   * name: Tool name to use in get_tool_spec() or execute_tool()
                   * description: What the tool does
-                - total_tools: Total tools in registry (18)
+                - total_tools: Total tools in registry (19)
                 - filtered_count: How many matched your pattern
 
                 Example output for discover_tools("lint"):
@@ -678,11 +684,11 @@ class QualityAssuranceLeanMCP:
                     {"name": "quality_execute_lint_assessment", "description": "Execute linting assessment with intelligent parsing..."}
                   ],
                   "filtered_count": 1,
-                  "total_tools": 18
+                  "total_tools": 19
                 }
 
             Examples:
-                discover_tools()              # List all 18 tools
+                discover_tools()              # List all 19 tools
                 discover_tools("lint")        # Find linting tools
                 discover_tools("security")    # Find security scanning tools
                 discover_tools("baseline")    # Find baseline/trend tools
@@ -974,7 +980,7 @@ def main():
         logger.info(
             "Context consumption: ~300 tokens (vs 50-100K tokens for traditional MCP)"
         )
-        logger.info("Available functions: 18 quality tools via 3 meta-tools")
+        logger.info("Available functions: 19 quality tools via 3 meta-tools")
 
         # Run the server
         app.run()
