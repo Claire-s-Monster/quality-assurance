@@ -71,6 +71,8 @@ class LintAssessmentRequest(BaseModel):
     fix_mode: Optional[bool] = False
     output_format: Optional[str] = "json"
     use_cache: Optional[bool] = True
+    project_path: Optional[str] = None
+    environment: Optional[str] = None
 
 
 class TypecheckAssessmentRequest(BaseModel):
@@ -79,6 +81,8 @@ class TypecheckAssessmentRequest(BaseModel):
     strict_mode: Optional[bool] = False
     config_file: Optional[str] = None
     use_cache: Optional[bool] = True
+    project_path: Optional[str] = None
+    environment: Optional[str] = None
 
 
 class SecurityScanRequest(BaseModel):
@@ -87,6 +91,8 @@ class SecurityScanRequest(BaseModel):
     severity_threshold: Optional[str] = "medium"
     exclude_tests: Optional[bool] = True
     use_cache: Optional[bool] = True
+    project_path: Optional[str] = None
+    environment: Optional[str] = None
 
 
 class ComplexityAnalysisRequest(BaseModel):
@@ -95,6 +101,8 @@ class ComplexityAnalysisRequest(BaseModel):
     complexity_threshold: Optional[int] = 10
     include_metrics: Optional[List[str]] = None
     use_cache: Optional[bool] = True
+    project_path: Optional[str] = None
+    environment: Optional[str] = None
 
 
 class ComprehensiveSuiteRequest(BaseModel):
@@ -184,17 +192,19 @@ def quality_execute_lint_assessment(
     rules: Optional[List[str]] = None,
     fix_mode: Optional[bool] = False,
     output_format: Optional[str] = "json",
-    use_cache: Optional[bool] = True
+    use_cache: Optional[bool] = True,
+    project_path: Optional[str] = None,
+    environment: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Execute linting assessment with intelligent parsing and pixi-mediated execution.
-    
+
     Consolidates multiple lint tools into a single intelligent function with:
     - Intelligent parsing of tool outputs
     - Pixi-first execution for environment consistency
     - Caching for performance optimization
     - Auto-detection of fixable issues
-    
+
     Args:
         tool: Linting tool to use ("ruff", "flake8", "pylint")
         target_path: Path to analyze (default: "src/")
@@ -202,14 +212,36 @@ def quality_execute_lint_assessment(
         fix_mode: Whether to apply fixes automatically
         output_format: Output format preference ("json", "text")
         use_cache: Whether to use cached results for performance
-        
+        project_path: Absolute path to the project root to analyze (default: server working directory)
+        environment: Pixi environment to run the task in (e.g. "quality", "dev"). Omit unless the task name is ambiguous across environments; pixi will name the valid candidates if it is.
+
     Returns:
         QualityAssessmentResult with parsed violations, metrics, and recommendations
     """
     try:
+        if project_path is not None:
+            if not os.path.isabs(project_path):
+                return {
+                    "error": (
+                        f"Relative path '{project_path}' not supported. MCP servers resolve "
+                        "paths relative to their process CWD, not the caller's working "
+                        "directory. Use an absolute path instead."
+                    ),
+                    "assessment_type": "lint",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                }
+            if not os.path.isdir(project_path):
+                return {
+                    "error": f"project_path does not exist or is not a directory: {project_path}",
+                    "assessment_type": "lint",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                }
+
         if not orchestration_service:
             initialize_server()
-        
+
         # Validate and convert tool
         try:
             quality_tool = QualityTool(tool)
@@ -219,7 +251,7 @@ def quality_execute_lint_assessment(
                 "supported_tools": [t.value for t in QualityTool],
                 "timestamp": datetime.now().isoformat()
             }
-        
+
         # Execute lint assessment
         result = orchestration_service.execute_lint_assessment(
             tool=quality_tool,
@@ -227,9 +259,11 @@ def quality_execute_lint_assessment(
             rules=rules,
             fix_mode=fix_mode,
             output_format=output_format,
-            use_cache=use_cache
+            use_cache=use_cache,
+            project_path=project_path,
+            environment=environment
         )
-        
+
         return {
             "assessment_type": "lint",
             "tool": result.tool.value,
@@ -260,31 +294,55 @@ def quality_execute_typecheck_assessment(
     target_path: Optional[str] = "src/",
     strict_mode: Optional[bool] = False,
     config_file: Optional[str] = None,
-    use_cache: Optional[bool] = True
+    use_cache: Optional[bool] = True,
+    project_path: Optional[str] = None,
+    environment: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Execute type checking analysis with intelligent error categorization.
-    
+
     Provides comprehensive type checking with:
     - Support for multiple type checkers (mypy, pyright)
     - Intelligent error categorization and prioritization
     - Configuration file auto-detection
     - Performance optimization through caching
-    
+
     Args:
         tool: Type checker to use ("mypy", "pyright")
         target_path: Path to analyze (default: "src/")
         strict_mode: Enable strict type checking mode
         config_file: Custom configuration file path
         use_cache: Whether to use cached results
-        
+        project_path: Absolute path to the project root to analyze (default: server working directory)
+        environment: Pixi environment to run the task in (e.g. "quality", "dev"). Omit unless the task name is ambiguous across environments; pixi will name the valid candidates if it is.
+
     Returns:
         QualityAssessmentResult with type errors, coverage metrics, and suggestions
     """
     try:
+        if project_path is not None:
+            if not os.path.isabs(project_path):
+                return {
+                    "error": (
+                        f"Relative path '{project_path}' not supported. MCP servers resolve "
+                        "paths relative to their process CWD, not the caller's working "
+                        "directory. Use an absolute path instead."
+                    ),
+                    "assessment_type": "typecheck",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                }
+            if not os.path.isdir(project_path):
+                return {
+                    "error": f"project_path does not exist or is not a directory: {project_path}",
+                    "assessment_type": "typecheck",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                }
+
         if not orchestration_service:
             initialize_server()
-        
+
         # Validate and convert tool
         try:
             quality_tool = QualityTool(tool)
@@ -294,15 +352,17 @@ def quality_execute_typecheck_assessment(
                 "supported_tools": [t.value for t in QualityTool if "mypy" in t.value],
                 "timestamp": datetime.now().isoformat()
             }
-        
+
         # Execute typecheck assessment using orchestration service
         result = orchestration_service.quality_executor.execute_typecheck_assessment(
             tool=quality_tool,
             target_path=target_path,
             strict_mode=strict_mode,
-            config_file=config_file
+            config_file=config_file,
+            project_path=project_path,
+            environment=environment
         )
-        
+
         return {
             "assessment_type": "typecheck",
             "tool": result.tool.value,
@@ -333,31 +393,55 @@ def quality_execute_security_scan(
     target_path: Optional[str] = "src/",
     severity_threshold: Optional[str] = "medium",
     exclude_tests: Optional[bool] = True,
-    use_cache: Optional[bool] = True
+    use_cache: Optional[bool] = True,
+    project_path: Optional[str] = None,
+    environment: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Execute security vulnerability detection with risk categorization.
-    
+
     Provides comprehensive security scanning with:
     - Multiple security scanners (bandit, safety)
     - Risk-based categorization and prioritization
     - CWE mapping for vulnerability classification
     - Remediation guidance generation
-    
+
     Args:
         tool: Security scanner to use ("bandit", "safety")
         target_path: Path to analyze (default: "src/")
         severity_threshold: Minimum severity to report ("low", "medium", "high")
         exclude_tests: Whether to exclude test files
         use_cache: Whether to use cached results
-        
+        project_path: Absolute path to the project root to analyze (default: server working directory)
+        environment: Pixi environment to run the task in (e.g. "quality", "dev"). Omit unless the task name is ambiguous across environments; pixi will name the valid candidates if it is.
+
     Returns:
         QualityAssessmentResult with security issues, risk assessment, and remediation
     """
     try:
+        if project_path is not None:
+            if not os.path.isabs(project_path):
+                return {
+                    "error": (
+                        f"Relative path '{project_path}' not supported. MCP servers resolve "
+                        "paths relative to their process CWD, not the caller's working "
+                        "directory. Use an absolute path instead."
+                    ),
+                    "assessment_type": "security",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                }
+            if not os.path.isdir(project_path):
+                return {
+                    "error": f"project_path does not exist or is not a directory: {project_path}",
+                    "assessment_type": "security",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                }
+
         if not orchestration_service:
             initialize_server()
-        
+
         # Validate and convert tool
         try:
             quality_tool = QualityTool(tool)
@@ -367,15 +451,17 @@ def quality_execute_security_scan(
                 "supported_tools": ["bandit"],
                 "timestamp": datetime.now().isoformat()
             }
-        
+
         # Execute security scan using orchestration service
         result = orchestration_service.quality_executor.execute_security_scan(
             tool=quality_tool,
             target_path=target_path,
             severity_threshold=severity_threshold,
-            exclude_tests=exclude_tests
+            exclude_tests=exclude_tests,
+            project_path=project_path,
+            environment=environment
         )
-        
+
         return {
             "assessment_type": "security",
             "tool": result.tool.value,
@@ -411,31 +497,55 @@ def quality_execute_complexity_analysis(
     target_path: Optional[str] = "src/",
     complexity_threshold: Optional[int] = 10,
     include_metrics: Optional[List[str]] = None,
-    use_cache: Optional[bool] = True
+    use_cache: Optional[bool] = True,
+    project_path: Optional[str] = None,
+    environment: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Execute code complexity metrics analysis with intelligent categorization.
-    
+
     Provides comprehensive complexity analysis with:
     - Multiple complexity metrics (cyclomatic, maintainability, halstead)
     - Intelligent threshold-based categorization
     - Hotspot identification and prioritization
     - Refactoring recommendations
-    
+
     Args:
         tool: Complexity analysis tool ("radon")
         target_path: Path to analyze (default: "src/")
         complexity_threshold: Complexity threshold for warnings
         include_metrics: Specific metrics to include
         use_cache: Whether to use cached results
-        
+        project_path: Absolute path to the project root to analyze (default: server working directory)
+        environment: Pixi environment to run the task in (e.g. "quality", "dev"). Omit unless the task name is ambiguous across environments; pixi will name the valid candidates if it is.
+
     Returns:
         QualityAssessmentResult with complexity metrics, hotspots, and refactoring guidance
     """
     try:
+        if project_path is not None:
+            if not os.path.isabs(project_path):
+                return {
+                    "error": (
+                        f"Relative path '{project_path}' not supported. MCP servers resolve "
+                        "paths relative to their process CWD, not the caller's working "
+                        "directory. Use an absolute path instead."
+                    ),
+                    "assessment_type": "complexity",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                }
+            if not os.path.isdir(project_path):
+                return {
+                    "error": f"project_path does not exist or is not a directory: {project_path}",
+                    "assessment_type": "complexity",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                }
+
         if not orchestration_service:
             initialize_server()
-        
+
         # Validate and convert tool
         try:
             quality_tool = QualityTool(tool)
@@ -445,14 +555,16 @@ def quality_execute_complexity_analysis(
                 "supported_tools": ["radon"],
                 "timestamp": datetime.now().isoformat()
             }
-        
+
         # Execute complexity analysis using orchestration service
         result = orchestration_service.quality_executor.execute_complexity_analysis(
             tool=quality_tool,
             target_path=target_path,
-            complexity_threshold=complexity_threshold
+            complexity_threshold=complexity_threshold,
+            project_path=project_path,
+            environment=environment
         )
-        
+
         return {
             "assessment_type": "complexity",
             "tool": result.tool.value,

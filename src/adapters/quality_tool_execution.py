@@ -52,7 +52,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         rules: Optional[List[str]] = None,
         fix_mode: bool = False,
         output_format: str = "json",
-        use_cache: bool = True
+        use_cache: bool = True,
+        project_path: Optional[str] = None,
+        environment: Optional[str] = None
     ) -> QualityAssessmentResult:
         """
         Execute linting tools via pixi with intelligent result parsing.
@@ -66,6 +68,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             fix_mode: Whether to apply auto-fixes
             output_format: Output format preference
             use_cache: Whether to use cached results (currently unused, for API compatibility)
+            project_path: Absolute path to the project root to analyze (default: server working directory)
+            environment: Pixi environment to run the task in (omit unless ambiguous)
         """
         start_time = datetime.now(UTC).isoformat()
         execution_start = time.time()
@@ -83,7 +87,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 raise ValueError(f"Unsupported lint tool: {tool}")
 
             # Validate task exists
-            task_check = self.pixi_executor.task_exists(pixi_task)
+            task_check = self.pixi_executor.task_exists(pixi_task, working_dir=project_path)
             if not task_check.get("exists", False):
                 return self._create_error_result(
                     tool=tool,
@@ -110,10 +114,10 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                     args.extend(["--select", ",".join(rules)])
             
             if output_format == "json" and tool == QualityTool.RUFF:
-                args.append("--format=json")
+                args.append("--output-format=json")
 
             # Execute pixi task
-            result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300)
+            result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300, working_dir=project_path, environment=environment)
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
 
@@ -194,7 +198,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         strict_mode: bool = False,
         config_file: Optional[str] = None,
         incremental: bool = True,
-        cache_dir: Optional[str] = None
+        cache_dir: Optional[str] = None,
+        project_path: Optional[str] = None,
+        environment: Optional[str] = None
     ) -> QualityAssessmentResult:
         """
         Execute type checking tools via pixi with comprehensive analysis.
@@ -208,6 +214,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             config_file: Custom configuration file path
             incremental: Enable incremental checking
             cache_dir: Custom cache directory
+            project_path: Absolute path to the project root to analyze (default: server working directory)
+            environment: Pixi environment to run the task in (omit unless ambiguous)
         """
         start_time = datetime.now(UTC).isoformat()
         execution_start = time.time()
@@ -216,7 +224,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             pixi_task = "typecheck"
 
             # Validate task exists
-            task_check = self.pixi_executor.task_exists(pixi_task)
+            task_check = self.pixi_executor.task_exists(pixi_task, working_dir=project_path)
             if not task_check.get("exists", False):
                 return self._create_error_result(
                     tool=tool,
@@ -241,7 +249,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             args.extend(["--show-error-codes", "--show-column-numbers"])
 
             # Execute pixi task
-            result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300)
+            result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300, working_dir=project_path, environment=environment)
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
 
@@ -322,7 +330,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         target_path: str = "src/",
         severity_threshold: str = "medium",
         exclude_tests: bool = True,
-        use_cache: bool = True
+        use_cache: bool = True,
+        project_path: Optional[str] = None,
+        environment: Optional[str] = None
     ) -> QualityAssessmentResult:
         """
         Execute security vulnerability scanning via pixi.
@@ -335,6 +345,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             severity_threshold: Minimum severity to report ("low", "medium", "high")
             exclude_tests: Whether to exclude test files
             use_cache: Whether to use cached results (currently unused, for API compatibility)
+            project_path: Absolute path to the project root to analyze (default: server working directory)
+            environment: Pixi environment to run the task in (omit unless ambiguous)
         """
         start_time = datetime.now(UTC).isoformat()
         execution_start = time.time()
@@ -343,7 +355,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             pixi_task = "security"
 
             # Validate task exists
-            task_check = self.pixi_executor.task_exists(pixi_task)
+            task_check = self.pixi_executor.task_exists(pixi_task, working_dir=project_path)
             if not task_check.get("exists", False):
                 return self._create_error_result(
                     tool=tool,
@@ -372,7 +384,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             args.extend(["-r", target_path])
 
             # Execute pixi task
-            result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300)
+            result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300, working_dir=project_path, environment=environment)
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
 
@@ -449,7 +461,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         target_path: str = "src/",
         complexity_threshold: int = 10,
         include_metrics: Optional[List[str]] = None,
-        use_cache: bool = True
+        use_cache: bool = True,
+        project_path: Optional[str] = None,
+        environment: Optional[str] = None
     ) -> QualityAssessmentResult:
         """
         Analyze code complexity metrics via pixi.
@@ -462,6 +476,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             complexity_threshold: Complexity threshold for warnings
             include_metrics: Specific metrics to include (cc, mi, hal, raw)
             use_cache: Whether to use cached results (currently unused, for API compatibility)
+            project_path: Absolute path to the project root to analyze (default: server working directory)
+            environment: Pixi environment to run the task in (omit unless ambiguous)
         """
         start_time = datetime.now(UTC).isoformat()
         execution_start = time.time()
@@ -470,7 +486,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             pixi_task = "complexity"
 
             # Validate task exists
-            task_check = self.pixi_executor.task_exists(pixi_task)
+            task_check = self.pixi_executor.task_exists(pixi_task, working_dir=project_path)
             if not task_check.get("exists", False):
                 return self._create_error_result(
                     tool=tool,
@@ -488,7 +504,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 args.extend(["--min", str(complexity_threshold)])
 
             # Execute pixi task
-            result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300)
+            result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300, working_dir=project_path, environment=environment)
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
 
@@ -503,7 +519,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             # If maintainability is requested, run second command
             if include_maintainability:
                 mi_args = ["mi", "src/", "--json"]
-                mi_result = self.pixi_executor.run_task(pixi_task, args=mi_args, timeout=300)
+                mi_result = self.pixi_executor.run_task(pixi_task, args=mi_args, timeout=300, working_dir=project_path, environment=environment)
                 if mi_result.get("success", False):
                     mi_stdout = mi_result.get("stdout", "")
                     self._update_complexity_with_maintainability(complexity_results, mi_stdout)

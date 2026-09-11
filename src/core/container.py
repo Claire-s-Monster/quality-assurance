@@ -146,7 +146,17 @@ class Container:
     def quality_executor(self) -> QualityToolExecutionAdapter:
         """Get the quality tool execution adapter."""
         return self._adapters["quality_executor"]
-    
+
+    @property
+    def pixi_executor(self) -> DirectPixiExecutionAdapter:
+        """Get the direct pixi execution adapter.
+
+        Returns the DirectPixiExecutionAdapter for raw pixi command
+        execution, NOT the QualityToolExecutionAdapter returned by
+        ``quality_executor``.
+        """
+        return self._adapters["direct_pixi"]
+
     @property
     def quality_analyzer(self) -> QualityAnalysisAdapter:
         """Get the quality analysis adapter."""

@@ -100,6 +100,14 @@ class QualityAssuranceLeanMCP:
                         "default": True,
                         "description": "Whether to use cached results",
                     },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Absolute path to the project root to analyze (default: server working directory)",
+                    },
+                    "environment": {
+                        "type": "string",
+                        "description": "Pixi environment to run the task in (e.g. 'quality', 'dev'); omit unless the task is ambiguous across environments",
+                    },
                 },
             },
         }
@@ -132,6 +140,14 @@ class QualityAssuranceLeanMCP:
                         "type": "boolean",
                         "default": True,
                         "description": "Whether to use cached results",
+                    },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Absolute path to the project root to analyze (default: server working directory)",
+                    },
+                    "environment": {
+                        "type": "string",
+                        "description": "Pixi environment to run the task in (e.g. 'quality', 'dev'); omit unless the task is ambiguous across environments",
                     },
                 },
             },
@@ -167,6 +183,14 @@ class QualityAssuranceLeanMCP:
                         "default": True,
                         "description": "Whether to use cached results",
                     },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Absolute path to the project root to analyze (default: server working directory)",
+                    },
+                    "environment": {
+                        "type": "string",
+                        "description": "Pixi environment to run the task in (e.g. 'quality', 'dev'); omit unless the task is ambiguous across environments",
+                    },
                 },
             },
         }
@@ -200,6 +224,14 @@ class QualityAssuranceLeanMCP:
                         "type": "boolean",
                         "default": True,
                         "description": "Whether to use cached results",
+                    },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Absolute path to the project root to analyze (default: server working directory)",
+                    },
+                    "environment": {
+                        "type": "string",
+                        "description": "Pixi environment to run the task in (e.g. 'quality', 'dev'); omit unless the task is ambiguous across environments",
                     },
                 },
             },
@@ -911,6 +943,22 @@ class QualityAssuranceLeanMCP:
                     else:
                         # Fallback for direct function (shouldn't happen with @app.tool)
                         result = tool_obj(**parameters)
+
+                    # A tool that returns an error payload is a FAILED call.
+                    # These functions report failure by returning a dict rather than
+                    # raising, so an unconditional "success" envelope here would show
+                    # callers a green light on a run that never executed.
+                    if isinstance(result, dict) and (
+                        result.get("status") == "error" or result.get("error")
+                    ):
+                        return {
+                            "tool": tool_name,
+                            "status": "error",
+                            "error": result.get("error")
+                            or f"{tool_name} reported status='error'",
+                            "result": result,
+                        }
+
                     return {"tool": tool_name, "status": "success", "result": result}
                 else:
                     return {

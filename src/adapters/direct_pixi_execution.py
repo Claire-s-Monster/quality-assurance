@@ -85,7 +85,8 @@ class DirectPixiExecutionAdapter:
         task_name: str,
         args: List[str] = None,
         timeout: int = 300,
-        working_dir: str | None = None
+        working_dir: str | None = None,
+        environment: str | None = None
     ) -> Dict[str, Any]:
         """
         Execute a pixi task with arguments.
@@ -123,12 +124,16 @@ class DirectPixiExecutionAdapter:
                 }
             
             # Build command
-            command = ["pixi", "run", task_name] + args
-            
+            command = ["pixi", "run"]
+            if environment:
+                command += ["--environment", environment]
+            command += [task_name] + args
+
             self.logging.log_info(f"Executing pixi task: {' '.join(command)}", {
                 "task_name": task_name,
                 "working_dir": working_dir,
-                "timeout": timeout
+                "timeout": timeout,
+                "environment": environment
             })
             
             # Execute command

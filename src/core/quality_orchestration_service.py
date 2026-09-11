@@ -137,10 +137,12 @@ class QualityOrchestrationService:
         fix_mode: bool = False,
         output_format: str = "json",
         use_cache: bool = True,
+        project_path: Optional[str] = None,
+        environment: Optional[str] = None,
     ) -> QualityAssessmentResult:
         """
         Execute single tool linting assessment with caching support.
-        
+
         Args:
             tool: Linting tool to use
             target_path: Path to analyze
@@ -148,7 +150,9 @@ class QualityOrchestrationService:
             fix_mode: Whether to apply fixes
             output_format: Output format preference
             use_cache: Whether to use cached results
-            
+            project_path: Absolute path to the project root to analyze (default: server working directory)
+            environment: Pixi environment to run the task in (omit unless ambiguous)
+
         Returns:
             QualityAssessmentResult with parsed linting results
         """
@@ -167,7 +171,9 @@ class QualityOrchestrationService:
                 cache_key = self._generate_cache_key(tool, QualityAssessmentType.LINT, target_path, {
                     "rules": rules or [],
                     "fix_mode": fix_mode,
-                    "output_format": output_format
+                    "output_format": output_format,
+                    "project_path": project_path,
+                    "environment": environment,
                 })
                 
                 cached_result = self.caching.get_cached_result(cache_key)
@@ -182,7 +188,9 @@ class QualityOrchestrationService:
                 target_path=target_path,
                 rules=rules,
                 fix_mode=fix_mode,
-                output_format=output_format
+                output_format=output_format,
+                project_path=project_path,
+                environment=environment
             )
             
             # Cache result if caching is available

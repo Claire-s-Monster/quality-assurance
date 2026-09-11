@@ -141,7 +141,9 @@ class QualityToolExecutionPort(ABC):
         rules: Optional[List[str]] = None,
         fix_mode: bool = False,
         output_format: str = "json",
-        use_cache: bool = True
+        use_cache: bool = True,
+        project_path: Optional[str] = None,
+        environment: Optional[str] = None
     ) -> QualityAssessmentResult:
         """Execute linting tools via pixi with intelligent result parsing."""
         pass
@@ -154,7 +156,9 @@ class QualityToolExecutionPort(ABC):
         strict_mode: bool = False,
         config_file: Optional[str] = None,
         incremental: bool = True,
-        cache_dir: Optional[str] = None
+        cache_dir: Optional[str] = None,
+        project_path: Optional[str] = None,
+        environment: Optional[str] = None
     ) -> QualityAssessmentResult:
         """Execute type checking tools via pixi with comprehensive analysis."""
         pass
@@ -166,7 +170,9 @@ class QualityToolExecutionPort(ABC):
         target_path: str = "src/",
         severity_threshold: str = "medium",
         exclude_tests: bool = True,
-        use_cache: bool = True
+        use_cache: bool = True,
+        project_path: Optional[str] = None,
+        environment: Optional[str] = None
     ) -> QualityAssessmentResult:
         """Execute security vulnerability scanning via pixi."""
         pass
@@ -178,7 +184,9 @@ class QualityToolExecutionPort(ABC):
         target_path: str = "src/",
         complexity_threshold: int = 10,
         include_metrics: Optional[List[str]] = None,
-        use_cache: bool = True
+        use_cache: bool = True,
+        project_path: Optional[str] = None,
+        environment: Optional[str] = None
     ) -> QualityAssessmentResult:
         """Analyze code complexity metrics via pixi."""
         pass
