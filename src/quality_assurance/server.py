@@ -1687,7 +1687,11 @@ def quality_execute_pixi_aware_assessment(
                 "performance_indicators": env_info.performance_indicators
             },
             "optimization_applied": environment_optimization,
-            "optimization_result": optimization_result.dict() if optimization_result else None,
+            "optimization_result": (
+                optimization_result
+                if isinstance(optimization_result, dict)
+                else (optimization_result.dict() if optimization_result else None)
+            ),
             "assessment_results": results,
             "execution_summary": {
                 "tools_requested": len(tools),
@@ -1806,7 +1810,11 @@ def quality_optimize_pixi_environment(
                 "quality_tasks": env_info.quality_tasks,
                 "performance_indicators": env_info.performance_indicators
             },
-            "optimization_results": optimization_result.dict() if optimization_result else {},
+            "optimization_results": (
+                optimization_result
+                if isinstance(optimization_result, dict)
+                else (optimization_result.dict() if optimization_result else {})
+            ),
             "missing_tools_analysis": {
                 "missing_tools": list(missing_tools),
                 "recommended_additions": recommended_additions,

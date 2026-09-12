@@ -87,7 +87,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 raise ValueError(f"Unsupported lint tool: {tool}")
 
             # Validate task exists
-            task_check = self.pixi_executor.task_exists(pixi_task, working_dir=project_path)
+            task_check = self.pixi_executor.task_exists(
+                pixi_task, working_dir=project_path, environment=environment
+            )
             if not task_check.get("exists", False):
                 return self._create_error_result(
                     tool=tool,
@@ -224,7 +226,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             pixi_task = "typecheck"
 
             # Validate task exists
-            task_check = self.pixi_executor.task_exists(pixi_task, working_dir=project_path)
+            task_check = self.pixi_executor.task_exists(
+                pixi_task, working_dir=project_path, environment=environment
+            )
             if not task_check.get("exists", False):
                 return self._create_error_result(
                     tool=tool,
@@ -355,7 +359,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             pixi_task = "security"
 
             # Validate task exists
-            task_check = self.pixi_executor.task_exists(pixi_task, working_dir=project_path)
+            task_check = self.pixi_executor.task_exists(
+                pixi_task, working_dir=project_path, environment=environment
+            )
             if not task_check.get("exists", False):
                 return self._create_error_result(
                     tool=tool,
@@ -486,7 +492,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             pixi_task = "complexity"
 
             # Validate task exists
-            task_check = self.pixi_executor.task_exists(pixi_task, working_dir=project_path)
+            task_check = self.pixi_executor.task_exists(
+                pixi_task, working_dir=project_path, environment=environment
+            )
             if not task_check.get("exists", False):
                 return self._create_error_result(
                     tool=tool,

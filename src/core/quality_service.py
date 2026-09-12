@@ -8,6 +8,7 @@ tool execution, providing comprehensive code quality analysis capabilities.
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import logging
+import os
 from pathlib import Path
 
 from .models import (
@@ -454,37 +455,114 @@ class QualityAssuranceService:
             SystemHealth with component status and metrics
         """
         try:
-            # Basic health checks - would be expanded in production
-            healthy = True
-            active_issues = []
-            performance_alerts = []
-            recommendations = []
+            active_issues: List[str] = []
+            performance_alerts: List[str] = []
+            recommendations: List[str] = []
 
-            # Check if basic quality tools are accessible
-            pixi_healthy = True  # Would check pixi availability
-            tools_available = True  # Would check tool availability
-            cache_healthy = True  # Would check cache system
-            filesystem_healthy = True  # Would check filesystem access
+            pixi_executor = getattr(self.quality_executor, "pixi_executor", None)
 
+            # Probe pixi executable resolution for real - this is the
+            # actual failure mode that this health check exists to catch.
+            pixi_bin = getattr(pixi_executor, "_pixi_bin", None)
+            pixi_healthy = bool(
+                pixi_bin and os.path.isfile(pixi_bin) and os.access(pixi_bin, os.X_OK)
+            )
             if not pixi_healthy:
-                healthy = False
-                active_issues.append("Pixi environment not accessible")
-                recommendations.append("Ensure pixi is installed and configured")
+                active_issues.append(
+                    f"Pixi executable could not be resolved or is not executable "
+                    f"(resolved path: {pixi_bin!r})"
+                )
+                recommendations.append(
+                    "Ensure pixi is installed and on PATH, or present at ~/.pixi/bin/pixi"
+                )
 
-            if not tools_available:
-                healthy = False
-                active_issues.append("Quality tools not available")
-                recommendations.append("Install required quality tools via pixi")
+            # Probe quality tool availability via real pixi task lookups.
+            # If we cannot probe cheaply and honestly, report None rather
+            # than fabricating a positive result.
+            #
+            # Task naming varies from project to project (this server is
+            # meant to assess *other* projects, not just itself), so the
+            # optional tasks are probed under both common spellings and a
+            # task is considered present if either form exists. Only a
+            # missing binary/filesystem is fatal to `healthy`; absent tasks
+            # are informational (recommendations), except when both
+            # required tasks are absent, which is surfaced as an issue.
+            tools_available: Optional[bool] = None
+            required_tasks = ("lint", "typecheck")
+            optional_task_aliases: dict[str, tuple[str, ...]] = {
+                "security-scan": ("security-scan", "security"),
+                "complexity-check": ("complexity-check", "complexity"),
+                "dead-code-check": ("dead-code-check", "dead-code"),
+            }
+            if pixi_executor is not None:
+                try:
+                    def _task_exists(task_name: str) -> bool:
+                        return bool(pixi_executor.task_exists(task_name).get("exists", False))
+
+                    missing_required = [
+                        task_name for task_name in required_tasks if not _task_exists(task_name)
+                    ]
+                    missing_optional = [
+                        canonical
+                        for canonical, aliases in optional_task_aliases.items()
+                        if not any(_task_exists(alias) for alias in aliases)
+                    ]
+
+                    tools_available = len(missing_required) == 0
+
+                    if len(missing_required) == len(required_tasks):
+                        active_issues.append(
+                            f"Missing expected pixi quality tasks: {', '.join(missing_required)} "
+                            "(project may not define quality tasks)"
+                        )
+                    elif missing_required:
+                        recommendations.append(
+                            f"Missing pixi quality task(s): {', '.join(missing_required)}"
+                        )
+
+                    if missing_optional:
+                        recommendations.append(
+                            f"Optional pixi quality tasks not found: {', '.join(missing_optional)}"
+                        )
+                except Exception as probe_error:
+                    tools_available = None
+                    active_issues.append(
+                        f"Could not probe quality tool availability: {probe_error}"
+                    )
+            else:
+                active_issues.append("No pixi executor available to probe quality tools")
+
+            # Filesystem health: verify the working directory is actually
+            # accessible rather than assuming it.
+            working_dir = getattr(pixi_executor, "working_dir", None)
+            filesystem_healthy = bool(
+                working_dir and os.path.isdir(working_dir) and os.access(working_dir, os.R_OK)
+            )
+            if not filesystem_healthy:
+                active_issues.append(f"Working directory not accessible: {working_dir!r}")
+
+            # No real cache subsystem is wired into this service, so we do
+            # not fabricate a cache health signal or performance metrics.
+            cache_system_healthy = True
+            average_assessment_time_ms: Optional[float] = None
+            cache_hit_rate: Optional[float] = None
+
+            # Absent quality tasks (required or optional) are never fatal to
+            # `healthy` — only a broken pixi binary or an inaccessible
+            # working directory are genuine health failures. A project may
+            # legitimately not define any quality tasks yet still be a
+            # perfectly resolvable pixi environment.
+            healthy = bool(pixi_healthy and cache_system_healthy and filesystem_healthy)
 
             return SystemHealth(
                 healthy=healthy,
                 timestamp=datetime.now().isoformat(),
                 pixi_environment_healthy=pixi_healthy,
                 quality_tools_available=tools_available,
-                cache_system_healthy=cache_healthy,
+                cache_system_healthy=cache_system_healthy,
                 filesystem_healthy=filesystem_healthy,
-                average_assessment_time_ms=500.0,  # Would be calculated from metrics
-                cache_hit_rate=85.0,  # Would be retrieved from cache system
+                average_assessment_time_ms=average_assessment_time_ms,
+                cache_hit_rate=cache_hit_rate,
                 active_issues=active_issues,
                 performance_alerts=performance_alerts,
                 recommendations=recommendations
@@ -496,11 +574,11 @@ class QualityAssuranceService:
                 healthy=False,
                 timestamp=datetime.now().isoformat(),
                 pixi_environment_healthy=False,
-                quality_tools_available=False,
+                quality_tools_available=None,
                 cache_system_healthy=False,
                 filesystem_healthy=False,
-                average_assessment_time_ms=0.0,
-                cache_hit_rate=0.0,
+                average_assessment_time_ms=None,
+                cache_hit_rate=None,
                 active_issues=[f"Health check failed: {str(e)}"],
                 performance_alerts=[],
                 recommendations=["Debug health check system"]

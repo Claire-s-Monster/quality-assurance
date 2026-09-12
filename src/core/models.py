@@ -546,13 +546,19 @@ class SystemHealth(BaseModel):
     
     # Component health
     pixi_environment_healthy: bool = Field(description="Pixi environment health")
-    quality_tools_available: bool = Field(description="Quality tools availability")
+    quality_tools_available: Optional[bool] = Field(
+        None, description="Quality tools availability (None if not cheaply probeable)"
+    )
     cache_system_healthy: bool = Field(description="Cache system health")
     filesystem_healthy: bool = Field(description="File system health")
-    
+
     # Performance metrics
-    average_assessment_time_ms: float = Field(description="Average assessment execution time")
-    cache_hit_rate: float = Field(description="Cache hit rate percentage")
+    average_assessment_time_ms: Optional[float] = Field(
+        None, description="Average assessment execution time (None if no real data recorded)"
+    )
+    cache_hit_rate: Optional[float] = Field(
+        None, description="Cache hit rate percentage (None if no real data recorded)"
+    )
     
     # Issues and alerts
     active_issues: List[str] = Field(default_factory=list, description="Active system issues")
