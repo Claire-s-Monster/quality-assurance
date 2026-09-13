@@ -31,8 +31,14 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from core.container import Container
+from core.models import ExecutionStatus
 
 logger = logging.getLogger(__name__)
+
+_PASSING_EXECUTION_STATUSES = frozenset(
+    {ExecutionStatus.SUCCESS.value, ExecutionStatus.WARNING.value}
+)
+_KNOWN_EXECUTION_STATUSES = frozenset(s.value for s in ExecutionStatus)
 
 
 class QualityAssuranceLeanMCP:
@@ -971,16 +977,26 @@ class QualityAssuranceLeanMCP:
                 # These functions report failure by returning a dict rather than
                 # raising, so an unconditional "success" envelope here would show
                 # callers a green light on a run that never executed.
-                if isinstance(result, dict) and (
-                    result.get("status") == "error" or result.get("error")
-                ):
-                    return {
-                        "tool": tool_name,
-                        "status": "error",
-                        "error": result.get("error")
-                        or f"{tool_name} reported status='error'",
-                        "result": result,
-                    }
+                #
+                # Enumerating the BAD statuses is what let FAILURE and TIMEOUT
+                # through once already, so invert it: any ExecutionStatus member
+                # not explicitly declared passing is a failure, and a member added
+                # later defaults to honest rather than silent. Statuses outside the
+                # enum (e.g. "healthy"/"available"/"stable" from the health and
+                # capability tools) are ad-hoc vocabularies and are left alone.
+                if isinstance(result, dict):
+                    status = result.get("status")
+                    if result.get("error") or (
+                        status in _KNOWN_EXECUTION_STATUSES
+                        and status not in _PASSING_EXECUTION_STATUSES
+                    ):
+                        return {
+                            "tool": tool_name,
+                            "status": "error",
+                            "error": result.get("error")
+                            or f"{tool_name} reported status={status!r}",
+                            "result": result,
+                        }
 
                 return {"tool": tool_name, "status": "success", "result": result}
             else:

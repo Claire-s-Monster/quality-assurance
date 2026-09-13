@@ -409,26 +409,41 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
 
-            # Parse bandit output
-            security_issues = []
-            violations = []
-            
-            stdout = result.get("stdout", "")
-            if stdout:
-                # Try JSON parsing first (default), fallback to text
-                try:
-                    security_issues, violations = self._parse_bandit_json_output(stdout, target_path)
-                except (json.JSONDecodeError, KeyError):
-                    security_issues, violations = self._parse_bandit_text_output(stdout, target_path)
-            else:
-                security_issues, violations = [], []
+            # Parse bandit output. bandit exits non-zero when it FINDS issues, so
+            # a non-zero exit is not by itself an execution failure -- the same
+            # distinction execute_lint_assessment and execute_typecheck_assessment
+            # draw via _is_execution_failure.
+            ran_ok = result.get("success", False)
+            security_issues, violations = [], []
 
-            # Determine status
-            high_severity_issues = sum(1 for issue in security_issues if issue.severity in [ViolationSeverity.CRITICAL, ViolationSeverity.HIGH])
-            if result.get("success", False):
-                status = ExecutionStatus.SUCCESS if high_severity_issues == 0 else ExecutionStatus.WARNING
-            else:
-                status = ExecutionStatus.FAILURE
+            if ran_ok or not self._is_execution_failure(result):
+                security_issues, violations = self._parse_security_output(
+                    result.get("stdout", ""), target_path
+                )
+
+            if not ran_ok and not security_issues:
+                # Non-zero exit unexplained by any parsed finding: the scan did not
+                # happen. Never report a score -- least of all a clean one -- for a
+                # target that was never scanned.
+                return self._create_error_result(
+                    tool=tool,
+                    assessment_type=QualityAssessmentType.SECURITY,
+                    start_time=start_time,
+                    execution_time_ms=execution_time_ms,
+                    error_msg=self._describe_execution_failure(result, pixi_task),
+                    target_path=target_path,
+                    pixi_task_used=pixi_task,
+                )
+
+            high_severity_issues = sum(
+                1 for issue in security_issues
+                if issue.severity in [ViolationSeverity.CRITICAL, ViolationSeverity.HIGH]
+            )
+            status = (
+                ExecutionStatus.SUCCESS
+                if ran_ok and high_severity_issues == 0
+                else ExecutionStatus.WARNING
+            )
 
             metrics = QualityMetrics(
                 overall_score=max(0.0, 10.0 - (high_severity_issues * 2.0) - (len(security_issues) * 0.5)),
@@ -1164,6 +1179,15 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         recommendations.append("⚙️ Enable strict mode gradually with mypy --strict for maximum type safety")
         
         return recommendations
+
+    def _parse_security_output(self, stdout: str, target_path: str):
+        """Parse bandit stdout, preferring JSON and falling back to text."""
+        if not stdout:
+            return [], []
+        try:
+            return self._parse_bandit_json_output(stdout, target_path)
+        except (json.JSONDecodeError, KeyError):
+            return self._parse_bandit_text_output(stdout, target_path)
 
     def _generate_security_recommendations(self, security_issues: List[SecurityIssue]) -> List[str]:
         """Generate recommendations based on security scan results."""
