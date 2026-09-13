@@ -26,6 +26,7 @@ from core.models import (
     ViolationSeverity,
 )
 from core.ports import QualityToolExecutionPort
+from adapters.direct_pixi_execution import TOOL_TASK_ALIASES
 
 
 class QualityToolExecutionAdapter(QualityToolExecutionPort):
@@ -44,6 +45,35 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             direct_pixi_executor: DirectPixiExecutionAdapter instance for pixi operations
         """
         self.pixi_executor = direct_pixi_executor
+
+    def _resolve_pixi_task(
+        self, tool_value: str, project_path: Optional[str], environment: Optional[str]
+    ) -> Optional[str]:
+        """Resolve a quality tool name to an existing pixi task via alias candidates.
+
+        Task vocabulary varies per project (this server assesses OTHER
+        projects), so the concrete pixi task name is never hardcoded here --
+        it is looked up through TOOL_TASK_ALIASES/resolve_task_name instead.
+        """
+        return self.pixi_executor.resolve_task_name(
+            tool_value, working_dir=project_path, environment=environment
+        )
+
+    def _describe_task_not_found(
+        self, tool_value: str, project_path: Optional[str]
+    ) -> tuple[str, str]:
+        """Build a not-found message naming the candidates tried and the
+        tasks actually available, so the caller sees the mismatch instead of
+        guessing. Returns (message, pixi_task_used) where pixi_task_used
+        joins every candidate tried since none resolved."""
+        candidates = list(TOOL_TASK_ALIASES.get(tool_value, (tool_value,)))
+        available = self.pixi_executor.list_tasks(working_dir=project_path).get("tasks", {})
+        message = (
+            f"No pixi task found for tool '{tool_value}'. "
+            f"Tried candidates: {candidates}. "
+            f"Available tasks: {list(available.keys())}"
+        )
+        return message, "/".join(candidates)
 
     def execute_lint_assessment(
         self,
@@ -75,30 +105,23 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         execution_start = time.time()
         
         try:
-            # Map tool to pixi task
-            task_mapping = {
-                QualityTool.RUFF: "lint",
-                QualityTool.PYLINT: "pylint", 
-                QualityTool.FLAKE8: "flake8"
-            }
-            
-            pixi_task = task_mapping.get(tool)
-            if not pixi_task:
+            # Supported lint tools; the concrete pixi task name is resolved
+            # via alias candidates rather than hardcoded per-project.
+            supported_lint_tools = {QualityTool.RUFF, QualityTool.PYLINT, QualityTool.FLAKE8}
+            if tool not in supported_lint_tools:
                 raise ValueError(f"Unsupported lint tool: {tool}")
 
-            # Validate task exists
-            task_check = self.pixi_executor.task_exists(
-                pixi_task, working_dir=project_path, environment=environment
-            )
-            if not task_check.get("exists", False):
+            pixi_task = self._resolve_pixi_task(tool.value, project_path, environment)
+            if not pixi_task:
+                error_msg, pixi_task_used = self._describe_task_not_found(tool.value, project_path)
                 return self._create_error_result(
                     tool=tool,
                     assessment_type=QualityAssessmentType.LINT,
                     start_time=start_time,
                     execution_time_ms=(time.time() - execution_start) * 1000,
-                    error_msg=f"Pixi task '{pixi_task}' not found",
+                    error_msg=error_msg,
                     target_path=target_path,
-                    pixi_task_used=pixi_task
+                    pixi_task_used=pixi_task_used
                 )
 
             # Build task arguments
@@ -223,21 +246,17 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         execution_start = time.time()
 
         try:
-            pixi_task = "typecheck"
-
-            # Validate task exists
-            task_check = self.pixi_executor.task_exists(
-                pixi_task, working_dir=project_path, environment=environment
-            )
-            if not task_check.get("exists", False):
+            pixi_task = self._resolve_pixi_task(tool.value, project_path, environment)
+            if not pixi_task:
+                error_msg, pixi_task_used = self._describe_task_not_found(tool.value, project_path)
                 return self._create_error_result(
                     tool=tool,
                     assessment_type=QualityAssessmentType.TYPECHECK,
                     start_time=start_time,
                     execution_time_ms=(time.time() - execution_start) * 1000,
-                    error_msg=f"Pixi task '{pixi_task}' not found",
+                    error_msg=error_msg,
                     target_path=target_path,
-                    pixi_task_used=pixi_task
+                    pixi_task_used=pixi_task_used
                 )
 
             # Build arguments for mypy
@@ -356,21 +375,17 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         execution_start = time.time()
 
         try:
-            pixi_task = "security"
-
-            # Validate task exists
-            task_check = self.pixi_executor.task_exists(
-                pixi_task, working_dir=project_path, environment=environment
-            )
-            if not task_check.get("exists", False):
+            pixi_task = self._resolve_pixi_task(tool.value, project_path, environment)
+            if not pixi_task:
+                error_msg, pixi_task_used = self._describe_task_not_found(tool.value, project_path)
                 return self._create_error_result(
                     tool=tool,
                     assessment_type=QualityAssessmentType.SECURITY,
                     start_time=start_time,
                     execution_time_ms=(time.time() - execution_start) * 1000,
-                    error_msg=f"Pixi task '{pixi_task}' not found",
+                    error_msg=error_msg,
                     target_path=target_path,
-                    pixi_task_used=pixi_task
+                    pixi_task_used=pixi_task_used
                 )
 
             # Build arguments for bandit
@@ -489,21 +504,17 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         execution_start = time.time()
 
         try:
-            pixi_task = "complexity"
-
-            # Validate task exists
-            task_check = self.pixi_executor.task_exists(
-                pixi_task, working_dir=project_path, environment=environment
-            )
-            if not task_check.get("exists", False):
+            pixi_task = self._resolve_pixi_task(tool.value, project_path, environment)
+            if not pixi_task:
+                error_msg, pixi_task_used = self._describe_task_not_found(tool.value, project_path)
                 return self._create_error_result(
                     tool=tool,
                     assessment_type=QualityAssessmentType.COMPLEXITY,
                     start_time=start_time,
                     execution_time_ms=(time.time() - execution_start) * 1000,
-                    error_msg=f"Pixi task '{pixi_task}' not found",
+                    error_msg=error_msg,
                     target_path=target_path,
-                    pixi_task_used=pixi_task
+                    pixi_task_used=pixi_task_used
                 )
 
             # Build arguments for radon

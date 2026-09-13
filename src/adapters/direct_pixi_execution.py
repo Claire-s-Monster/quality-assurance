@@ -13,13 +13,24 @@ Enhanced with quality intelligence for quality-focused task orchestration includ
 import json
 import os
 import shutil
+import statistics
 import subprocess
 import time
+from collections import deque
 from typing import Dict, Any, List, Optional, Set
 from pathlib import Path
 from dataclasses import dataclass
 
 from core.ports import LoggingPort
+
+
+TOOL_TASK_ALIASES: Dict[str, tuple[str, ...]] = {
+    "ruff": ("lint", "ruff-check", "ruff"),
+    "mypy": ("typecheck", "mypy", "type-check"),
+    "bandit": ("security-scan", "security", "bandit"),
+    "radon": ("complexity-check", "complexity", "radon"),
+    "vulture": ("dead-code-check", "dead-code", "vulture"),
+}
 
 
 def _resolve_pixi_executable() -> str:
@@ -83,6 +94,13 @@ class DirectPixiExecutionAdapter:
         self._quality_env_cache: Optional[QualityEnvironmentInfo] = None
         self._cache_timestamp: Optional[float] = None
         self._cache_ttl: int = 300  # 5 minutes cache TTL
+
+        # Per-task duration history for timeout diagnostics (in-memory only).
+        # Maps task_name -> bounded deque of recent successful/completed
+        # durations in milliseconds, so a timeout can be compared against a
+        # real baseline instead of being reported as opaque.
+        self._task_duration_history: Dict[str, "deque[float]"] = {}
+        self._duration_history_maxlen: int = 20
 
         # Quality tool detection patterns
         self._quality_tools_patterns = {
@@ -167,6 +185,10 @@ class DirectPixiExecutionAdapter:
             execution_time = time.time() - start_time
             success = result.returncode == 0
 
+            # Any run that completes -- success or a normal non-zero exit --
+            # contributes to the duration baseline used for timeout diagnostics.
+            self._record_task_duration(task_name, execution_time * 1000)
+
             self.logging.log_info(f"Pixi task completed: {task_name} ({'success' if success else 'failed'})", {
                 "exit_code": result.returncode,
                 "execution_time": execution_time
@@ -185,7 +207,8 @@ class DirectPixiExecutionAdapter:
 
         except subprocess.TimeoutExpired:
             execution_time = time.time() - start_time
-            error_msg = f"Task '{task_name}' timed out after {timeout} seconds"
+            diagnostic = self._build_timeout_diagnostic(task_name, timeout)
+            error_msg = f"Task '{task_name}' timed out after {timeout} seconds — {diagnostic}"
 
             self.logging.log_error(error_msg, {
                 "task_name": task_name,
@@ -223,6 +246,52 @@ class DirectPixiExecutionAdapter:
                 "working_dir": working_dir,
                 "error": str(e)
             }
+
+    def _record_task_duration(self, task_name: str, duration_ms: float) -> None:
+        """Record a completed task's duration for future timeout diagnostics.
+
+        In-memory only, bounded by `_duration_history_maxlen`. Called for
+        any run that completes -- success or a normal non-zero exit -- but
+        never for a timeout, since a timeout has no real duration to record.
+        """
+        history = self._task_duration_history.setdefault(
+            task_name, deque(maxlen=self._duration_history_maxlen)
+        )
+        history.append(duration_ms)
+
+    def _build_timeout_diagnostic(self, task_name: str, timeout: int) -> str:
+        """Compare a timeout against this task's recorded duration history.
+
+        Degrades gracefully: with fewer than 3 samples there is no reliable
+        baseline, so that is stated plainly rather than fabricating one.
+        The "likely blocked" framing is only used when the timeout is at
+        least 10x the median -- below that threshold the ratio is reported
+        without asserting a cause.
+        """
+        history = self._task_duration_history.get(task_name)
+        sample_count = len(history) if history else 0
+
+        if sample_count < 3:
+            return f"no duration baseline recorded for task '{task_name}' yet"
+
+        median_ms = statistics.median(history)
+        median_s = median_ms / 1000
+        timeout_ms = timeout * 1000
+        ratio = timeout_ms / median_ms if median_ms > 0 else float("inf")
+        ratio_str = f"{ratio:.0f}x" if ratio >= 100 else f"{ratio:.1f}x"
+
+        if ratio >= 10:
+            return (
+                f"approximately {ratio_str} the median duration for task "
+                f"'{task_name}' ({median_s:.1f}s over {sample_count} samples); "
+                "likely blocked (e.g. pixi lock contention) rather than slow"
+            )
+
+        return (
+            f"median duration for task '{task_name}' is {median_s:.1f}s over "
+            f"{sample_count} samples ({ratio_str} the timeout); insufficient "
+            "evidence to attribute this to blocking"
+        )
 
     def task_exists(
         self,
@@ -265,6 +334,40 @@ class DirectPixiExecutionAdapter:
                 "working_dir": working_dir,
                 "error": str(e)
             }
+
+    def resolve_task_name(
+        self,
+        tool_or_candidates: str | List[str],
+        working_dir: str | None = None,
+        environment: str | None = None
+    ) -> Optional[str]:
+        """Resolve a quality tool (or explicit candidate list) to a real pixi task.
+
+        Task vocabulary varies per project -- this server exists to assess
+        OTHER projects, so a hardcoded task name is the same category of bug
+        as a hardcoded path. `tool_or_candidates` may be either a known tool
+        name (looked up in TOOL_TASK_ALIASES, ordered most-conventional-first)
+        or an explicit ordered list of candidate task names to try directly.
+
+        Returns the first candidate present in `_get_available_tasks` for the
+        given working_dir/environment, or None if none of the candidates
+        exist.
+        """
+        working_dir = working_dir or self.working_dir
+
+        if isinstance(tool_or_candidates, str):
+            candidates: tuple[str, ...] | List[str] = TOOL_TASK_ALIASES.get(
+                tool_or_candidates, (tool_or_candidates,)
+            )
+        else:
+            candidates = tool_or_candidates
+
+        available_tasks = self._get_available_tasks(working_dir, environment)
+        for candidate in candidates:
+            if candidate in available_tasks:
+                return candidate
+
+        return None
 
     def list_tasks(self, working_dir: str | None = None) -> Dict[str, Any]:
         """
@@ -498,7 +601,8 @@ class DirectPixiExecutionAdapter:
         quality_config: Dict[str, Any] = None,
         environment_optimization: bool = True,
         timeout: int = 300,
-        working_dir: str | None = None
+        working_dir: str | None = None,
+        environment: str | None = None
     ) -> Dict[str, Any]:
         """
         Execute quality-focused pixi task with intelligence.
@@ -517,6 +621,7 @@ class DirectPixiExecutionAdapter:
             environment_optimization: Enable environment optimization
             timeout: Task timeout in seconds
             working_dir: Working directory for execution
+            environment: Pixi environment to run the task in (forwarded to run_task)
 
         Returns:
             Enhanced execution result with quality intelligence
@@ -562,7 +667,8 @@ class DirectPixiExecutionAdapter:
                 task_name=task_name,
                 args=optimized_args,
                 timeout=timeout,
-                working_dir=working_dir
+                working_dir=working_dir,
+                environment=environment
             )
 
             # Enhance result with quality intelligence

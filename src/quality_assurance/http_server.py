@@ -201,38 +201,19 @@ class HTTPQualityAssuranceServer:
         if tool_name == "execute_tool":
             target = arguments.get("tool_name")
             params = arguments.get("parameters", {})
-            if not target or target not in registry:
-                return {
-                    "error": f"Tool '{target}' not found",
-                    "available_tools": list(registry.keys()),
-                }
+            # HTTP callers deliver JSON-RPC arguments as raw dicts (no FastMCP
+            # parameter validation runs on this path), so a stringified
+            # parameters payload must still be coerced before dispatch.
             if isinstance(params, str):
                 try:
                     params = json.loads(params)
                 except (json.JSONDecodeError, TypeError):
                     params = {}
 
-            try:
-                # Delegate to the main server module functions
-                from quality_assurance import server as main_server
-
-                if hasattr(main_server, target):
-                    tool_obj = getattr(main_server, target)
-                    # FunctionTool stores the original function in .fn attribute
-                    if hasattr(tool_obj, "fn"):
-                        result = tool_obj.fn(**params)
-                    else:
-                        result = tool_obj(**params)
-                    return {"tool": target, "status": "success", "result": result}
-                else:
-                    return {
-                        "tool": target,
-                        "status": "error",
-                        "error": f"Function '{target}' not implemented in main server",
-                    }
-            except Exception as e:
-                logger.error("Tool execution error for %s: %s", target, e)
-                return {"tool": target, "status": "error", "error": str(e)}
+            # Delegate to the single canonical dispatch implementation on the
+            # lean MCP instance instead of reimplementing lookup/import/fn-call/
+            # envelope logic here. See QualityAssuranceLeanMCP._dispatch_tool.
+            return self._lean_mcp._dispatch_tool(target, params)
 
         # Unknown meta-tool
         return {
@@ -249,7 +230,7 @@ class HTTPQualityAssuranceServer:
         async def well_known_stub(path: str):
             return JSONResponse(status_code=404, content={"error": "OAuth not supported"})
 
-        @self.app.post("/register")
+        @self.app.api_route("/register", methods=["GET", "POST", "PUT", "DELETE"])
         async def register_stub():
             return JSONResponse(status_code=404, content={"error": "Dynamic client registration not supported"})
 

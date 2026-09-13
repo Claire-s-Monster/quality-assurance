@@ -62,6 +62,42 @@ def initialize_server():
     container.logging.log_info(f"Quality Assurance MCP Server initialized in {working_dir}")
 
 
+def _resolve_server_working_directory() -> Optional[str]:
+    """Best-effort lookup of the server's own working directory.
+
+    Mirrors the adapter chain traversal used by
+    ``QualityAssuranceService.get_system_health`` (src/core/quality_service.py):
+    orchestration_service -> quality_executor -> pixi_executor -> working_dir.
+    Returns None rather than guessing if any link in that chain is unavailable.
+    """
+    try:
+        pixi_executor = getattr(orchestration_service.quality_executor, "pixi_executor", None)
+        return getattr(pixi_executor, "working_dir", None)
+    except Exception:
+        return None
+
+
+def _resolve_project_path_visibility(project_path: Optional[str]):
+    """Return (resolved_path, supplied, warning) response-visibility fields.
+
+    When project_path is supplied, it IS the resolved path and no warning is
+    produced. When omitted, the server's own working directory is resolved
+    (best-effort) and a warning is generated so a defaulted analysis target
+    cannot be mistaken for an intentionally chosen one.
+    """
+    if project_path is not None:
+        return project_path, True, None
+
+    resolved = _resolve_server_working_directory()
+    location = resolved if resolved else "unable to determine"
+    warning = (
+        "⚠️ project_path was not supplied; analyzed the server's own working "
+        f"directory ({location}). If you intended to analyze a different "
+        "project, pass an absolute project_path."
+    )
+    return resolved, False, warning
+
+
 # Request/Response Models for Input Validation
 
 class LintAssessmentRequest(BaseModel):
@@ -264,6 +300,11 @@ def quality_execute_lint_assessment(
             environment=environment
         )
 
+        resolved_path, path_supplied, path_warning = _resolve_project_path_visibility(project_path)
+        recommendations = list(result.recommendations)
+        if path_warning:
+            recommendations.insert(0, path_warning)
+
         return {
             "assessment_type": "lint",
             "tool": result.tool.value,
@@ -275,15 +316,20 @@ def quality_execute_lint_assessment(
             "violations": [violation.dict() for violation in result.violations],
             "parsed_metrics": result.parsed_metrics.dict(),
             "auto_fix_available": result.auto_fix_available,
-            "recommendations": result.recommendations,
+            "recommendations": recommendations,
+            "project_path_resolved": resolved_path,
+            "project_path_supplied": path_supplied,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
+        resolved_path, path_supplied, _ = _resolve_project_path_visibility(project_path)
         return {
             "error": f"Lint assessment failed: {str(e)}",
             "assessment_type": "lint",
             "status": "error",
+            "project_path_resolved": resolved_path,
+            "project_path_supplied": path_supplied,
             "timestamp": datetime.now().isoformat()
         }
 
@@ -363,6 +409,11 @@ def quality_execute_typecheck_assessment(
             environment=environment
         )
 
+        resolved_path, path_supplied, path_warning = _resolve_project_path_visibility(project_path)
+        recommendations = list(result.recommendations)
+        if path_warning:
+            recommendations.insert(0, path_warning)
+
         return {
             "assessment_type": "typecheck",
             "tool": result.tool.value,
@@ -374,15 +425,20 @@ def quality_execute_typecheck_assessment(
             "violations": [violation.dict() for violation in result.violations],
             "parsed_metrics": result.parsed_metrics.dict(),
             "type_coverage_percentage": getattr(result.parsed_metrics, 'type_coverage', 0.0),
-            "recommendations": result.recommendations,
+            "recommendations": recommendations,
+            "project_path_resolved": resolved_path,
+            "project_path_supplied": path_supplied,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
+        resolved_path, path_supplied, _ = _resolve_project_path_visibility(project_path)
         return {
             "error": f"Type checking assessment failed: {str(e)}",
             "assessment_type": "typecheck",
             "status": "error",
+            "project_path_resolved": resolved_path,
+            "project_path_supplied": path_supplied,
             "timestamp": datetime.now().isoformat()
         }
 
@@ -462,6 +518,11 @@ def quality_execute_security_scan(
             environment=environment
         )
 
+        resolved_path, path_supplied, path_warning = _resolve_project_path_visibility(project_path)
+        recommendations = list(result.recommendations)
+        if path_warning:
+            recommendations.insert(0, path_warning)
+
         return {
             "assessment_type": "security",
             "tool": result.tool.value,
@@ -478,15 +539,20 @@ def quality_execute_security_scan(
                 "low_issues": len([i for i in result.security_issues if i.severity.value == "low"])
             },
             "parsed_metrics": result.parsed_metrics.dict(),
-            "recommendations": result.recommendations,
+            "recommendations": recommendations,
+            "project_path_resolved": resolved_path,
+            "project_path_supplied": path_supplied,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
+        resolved_path, path_supplied, _ = _resolve_project_path_visibility(project_path)
         return {
             "error": f"Security scan failed: {str(e)}",
-            "assessment_type": "security", 
+            "assessment_type": "security",
             "status": "error",
+            "project_path_resolved": resolved_path,
+            "project_path_supplied": path_supplied,
             "timestamp": datetime.now().isoformat()
         }
 
@@ -565,6 +631,11 @@ def quality_execute_complexity_analysis(
             environment=environment
         )
 
+        resolved_path, path_supplied, path_warning = _resolve_project_path_visibility(project_path)
+        recommendations = list(result.recommendations)
+        if path_warning:
+            recommendations.insert(0, path_warning)
+
         return {
             "assessment_type": "complexity",
             "tool": result.tool.value,
@@ -580,15 +651,20 @@ def quality_execute_complexity_analysis(
                 "total_functions": len(result.complexity_results)
             },
             "parsed_metrics": result.parsed_metrics.dict(),
-            "recommendations": result.recommendations,
+            "recommendations": recommendations,
+            "project_path_resolved": resolved_path,
+            "project_path_supplied": path_supplied,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
+        resolved_path, path_supplied, _ = _resolve_project_path_visibility(project_path)
         return {
             "error": f"Complexity analysis failed: {str(e)}",
             "assessment_type": "complexity",
             "status": "error",
+            "project_path_resolved": resolved_path,
+            "project_path_supplied": path_supplied,
             "timestamp": datetime.now().isoformat()
         }
 
@@ -1585,41 +1661,97 @@ def quality_generate_comprehensive_report(
 # PIXI-QUALITY INTEGRATION FUNCTIONS (Functions 15-18)
 # =============================================================================
 
+def _classify_pixi_aware_outcome(result: Dict[str, Any]) -> str:
+    """Classify a single tool result from quality_execute_pixi_aware_assessment.
+
+    Mutually exclusive and exhaustive over the three shapes `results` can
+    contain (unavailable-tool dict, exception dict, or a raw run_quality_task
+    result), so summing the three category counts always equals the number
+    of tools requested -- this is what previously broke: a failed run_task
+    result (success=False, non-zero exit_code, no "status" key) fell through
+    to "executed" because only "status" was checked.
+    """
+    if result.get("status") == "unavailable":
+        return "unavailable"
+    if result.get("status") == "error":
+        return "failed"
+    if result.get("error"):
+        return "failed"
+    if result.get("success") is False:
+        return "failed"
+    if result.get("exit_code"):
+        return "failed"
+    return "executed"
+
+
+def _describe_pixi_aware_failure(tool_name: str, result: Dict[str, Any]) -> str:
+    """Build a one-line description of why a tool failed, for recommendations."""
+    detail = result.get("error") or result.get("stderr") or result.get("message")
+    if not detail:
+        exit_code = result.get("exit_code")
+        detail = f"exit_code={exit_code}" if exit_code is not None else "unknown error"
+    return f"{tool_name}: {detail}"
+
+
 @app.tool()
 def quality_execute_pixi_aware_assessment(
     tools: Optional[List[str]] = None,
     target_paths: Optional[List[str]] = None,
     environment_optimization: Optional[bool] = True,
-    use_pixi_templates: Optional[bool] = True
+    use_pixi_templates: Optional[bool] = True,
+    project_path: Optional[str] = None,
+    environment: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Execute quality assessment using pixi-aware task orchestration.
-    
+
     Enhanced features vs existing quality_execute_lint_assessment:
     - Pixi environment intelligence
     - Quality tool template application
     - Environment-specific optimization
     - Multi-tool parallel execution with pixi isolation
-    
+
     Args:
         tools: Quality tools to use (default: ["ruff", "mypy", "bandit"])
         target_paths: Paths to analyze (default: ["src/"])
         environment_optimization: Enable environment optimization
         use_pixi_templates: Use pixi task templates
-        
+        project_path: Absolute path to the project root to analyze (default: server working directory)
+        environment: Pixi environment to run the task in (e.g. "quality", "dev"). Omit unless the task name is ambiguous across environments; pixi will name the valid candidates if it is.
+
     Returns:
         Dict with pixi-aware assessment results, environment info, and optimization data
     """
     try:
+        if project_path is not None:
+            if not os.path.isabs(project_path):
+                return {
+                    "error": (
+                        f"Relative path '{project_path}' not supported. MCP servers resolve "
+                        "paths relative to their process CWD, not the caller's working "
+                        "directory. Use an absolute path instead."
+                    ),
+                    "assessment_type": "pixi_aware_comprehensive",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                }
+            if not os.path.isdir(project_path):
+                return {
+                    "error": f"project_path does not exist or is not a directory: {project_path}",
+                    "assessment_type": "pixi_aware_comprehensive",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                }
+
         if not orchestration_service:
             initialize_server()
-        
+
         # Set defaults
         if tools is None:
             tools = ["ruff", "mypy", "bandit"]
         if target_paths is None:
             target_paths = ["src/"]
-        
+
         # Get enhanced pixi adapter from container
         pixi_adapter = container.pixi_executor
         if not hasattr(pixi_adapter, 'detect_quality_environment'):
@@ -1628,18 +1760,18 @@ def quality_execute_pixi_aware_assessment(
                 "message": "DirectPixiExecutionAdapter not enhanced with quality intelligence",
                 "timestamp": datetime.now().isoformat()
             }
-        
-        # Detect quality environment first
-        env_info = pixi_adapter.detect_quality_environment()
-        
+
+        # Detect quality environment first (scoped to project_path when supplied)
+        env_info = pixi_adapter.detect_quality_environment(working_dir=project_path)
+
         # Optimize environment if requested
         optimization_result = None
         if environment_optimization:
             optimization_result = pixi_adapter.optimize_quality_environment(
                 required_tools=tools,
-                working_dir=None
+                working_dir=project_path
             )
-        
+
         # Execute quality tasks using enhanced adapter
         results = []
         for tool in tools:
@@ -1652,17 +1784,42 @@ def quality_execute_pixi_aware_assessment(
                             tool_name=tool,
                             target_pattern=target_paths[0] if target_paths else "src/"
                         )
-                    
+
+                    # QualityTaskTemplate (src/adapters/direct_pixi_execution.py)
+                    # is a @dataclass, not a dict - it has no .get() method.
+                    # Access its fields directly instead.
+                    quality_config = {"output_format": template.output_format} if template else None
+
+                    # Resolve the actual pixi task name through the same
+                    # alias-candidate helper used by quality_tool_execution.py
+                    # (task vocabulary varies per target project). Prefer the
+                    # template's own name if it happens to resolve; otherwise
+                    # fall back to the tool's candidate list.
+                    resolved_task_name = None
+                    if template and template.task_name:
+                        resolved_task_name = pixi_adapter.resolve_task_name(
+                            [template.task_name], working_dir=project_path, environment=environment
+                        )
+                    if not resolved_task_name:
+                        resolved_task_name = pixi_adapter.resolve_task_name(
+                            tool, working_dir=project_path, environment=environment
+                        )
+                    task_name = resolved_task_name or (
+                        template.task_name if template else f"quality-{tool}"
+                    )
+
                     # Run quality task with pixi awareness
                     result = pixi_adapter.run_quality_task(
-                        task_name=template.get("task_name", f"quality-{tool}") if template else f"quality-{tool}",
+                        task_name=task_name,
                         quality_tool=tool,
                         target_paths=target_paths,
-                        quality_config=template.get("config") if template else None,
-                        environment_optimization=environment_optimization
+                        quality_config=quality_config,
+                        environment_optimization=environment_optimization,
+                        working_dir=project_path,
+                        environment=environment
                     )
                     results.append(result)
-                    
+
                 except Exception as e:
                     container.logging.log_error(f"Failed to run {tool}: {e}")
                     results.append({
@@ -1676,7 +1833,36 @@ def quality_execute_pixi_aware_assessment(
                     "status": "unavailable",
                     "message": f"Tool {tool} not available in pixi environment"
                 })
-        
+
+        resolved_path, path_supplied, path_warning = _resolve_project_path_visibility(project_path)
+        recommendations = list(env_info.recommendations)
+        if path_warning:
+            recommendations.insert(0, path_warning)
+
+        # Accounting: classify every result exactly once so
+        # tools_failed + tools_executed + tools_unavailable == tools_requested
+        # always holds. A failed run (success is False / non-zero exit_code /
+        # truthy "error") must be counted as failed, never as executed.
+        # `results` has exactly one entry per requested tool (the loop above
+        # appends once per iteration, in `tools` order), and
+        # _classify_pixi_aware_outcome always returns exactly one of the
+        # three categories below, so this sum is structurally guaranteed to
+        # equal len(tools) -- see test_pixi_aware_execution_summary.py.
+        outcomes = [_classify_pixi_aware_outcome(r) for r in results]
+        tools_executed = outcomes.count("executed")
+        tools_unavailable = outcomes.count("unavailable")
+        tools_failed = outcomes.count("failed")
+
+        if tools_failed:
+            failure_details = [
+                _describe_pixi_aware_failure(tool_name, result)
+                for tool_name, result, outcome in zip(tools, results, outcomes)
+                if outcome == "failed"
+            ]
+            recommendations.insert(
+                0, "Quality tool execution failed for: " + "; ".join(failure_details)
+            )
+
         return {
             "assessment_type": "pixi_aware_comprehensive",
             "environment_info": {
@@ -1695,23 +1881,29 @@ def quality_execute_pixi_aware_assessment(
             "assessment_results": results,
             "execution_summary": {
                 "tools_requested": len(tools),
-                "tools_executed": len([r for r in results if r.get("status") not in ["error", "unavailable"]]),
-                "tools_unavailable": len([r for r in results if r.get("status") == "unavailable"]),
-                "tools_failed": len([r for r in results if r.get("status") == "error"])
+                "tools_executed": tools_executed,
+                "tools_unavailable": tools_unavailable,
+                "tools_failed": tools_failed
             },
             "pixi_intelligence": {
                 "templates_used": use_pixi_templates,
                 "environment_optimization_enabled": environment_optimization,
                 "pixi_task_isolation": True
             },
-            "recommendations": env_info.recommendations,
+            "recommendations": recommendations,
+            "project_path_resolved": resolved_path,
+            "project_path_supplied": path_supplied,
+            "environment_requested": environment,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
+        resolved_path, path_supplied, _ = _resolve_project_path_visibility(project_path)
         return {
             "error": f"Pixi-aware assessment failed: {str(e)}",
             "assessment_type": "pixi_aware_comprehensive",
+            "project_path_resolved": resolved_path,
+            "project_path_supplied": path_supplied,
             "timestamp": datetime.now().isoformat()
         }
 

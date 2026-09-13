@@ -578,6 +578,14 @@ class QualityAssuranceLeanMCP:
                         "default": True,
                         "description": "Use pixi task templates",
                     },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Absolute path to the project root to analyze (default: server working directory)",
+                    },
+                    "environment": {
+                        "type": "string",
+                        "description": "Pixi environment to run the task in (e.g. 'quality', 'dev'); omit unless the task is ambiguous across environments",
+                    },
                 },
             },
         }
@@ -921,55 +929,70 @@ class QualityAssuranceLeanMCP:
             FOUND A BUG OR MISSING FEATURE?
             File an issue with: tool name, parameters used, error message, expected vs actual behavior.
             """
-            if tool_name not in self.tool_registry:
-                available_tools = list(self.tool_registry.keys())
-                return {
-                    "error": f"Tool '{tool_name}' not found",
-                    "available_tools": available_tools,
-                }
+            return self._dispatch_tool(tool_name, parameters)
 
-            try:
-                # Import the main server module dynamically to access the tool functions
-                from . import server as main_server
+    def _dispatch_tool(
+        self, tool_name: str, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Dispatch a quality tool call to the main server module and build its envelope.
 
-                # Get the tool from the main server
-                # Note: @app.tool() decorator returns a FunctionTool object, not the function
-                # The FunctionTool object is not callable directly - access the .fn attribute
-                if hasattr(main_server, tool_name):
-                    tool_obj = getattr(main_server, tool_name)
-                    # FunctionTool stores the original function in .fn attribute
-                    if hasattr(tool_obj, "fn"):
-                        result = tool_obj.fn(**parameters)
-                    else:
-                        # Fallback for direct function (shouldn't happen with @app.tool)
-                        result = tool_obj(**parameters)
+        This is the single canonical dispatch implementation. It is called by the
+        `execute_tool` meta-tool above (via FastMCP) AND by the HTTP transport
+        (`http_server.py`), which cannot reuse the decorated closure directly since
+        `@self.app.tool()` wraps it in a FastMCP FunctionTool. Keeping exactly one
+        copy of this logic prevents dispatch fixes from landing in a dead copy while
+        a copy-pasted twin (and its tests) silently drifts from production behavior.
+        """
+        if tool_name not in self.tool_registry:
+            available_tools = list(self.tool_registry.keys())
+            return {
+                "error": f"Tool '{tool_name}' not found",
+                "available_tools": available_tools,
+            }
 
-                    # A tool that returns an error payload is a FAILED call.
-                    # These functions report failure by returning a dict rather than
-                    # raising, so an unconditional "success" envelope here would show
-                    # callers a green light on a run that never executed.
-                    if isinstance(result, dict) and (
-                        result.get("status") == "error" or result.get("error")
-                    ):
-                        return {
-                            "tool": tool_name,
-                            "status": "error",
-                            "error": result.get("error")
-                            or f"{tool_name} reported status='error'",
-                            "result": result,
-                        }
+        try:
+            # Import the main server module dynamically to access the tool functions
+            from . import server as main_server
 
-                    return {"tool": tool_name, "status": "success", "result": result}
+            # Get the tool from the main server
+            # Note: @app.tool() decorator returns a FunctionTool object, not the function
+            # The FunctionTool object is not callable directly - access the .fn attribute
+            if hasattr(main_server, tool_name):
+                tool_obj = getattr(main_server, tool_name)
+                # FunctionTool stores the original function in .fn attribute
+                if hasattr(tool_obj, "fn"):
+                    result = tool_obj.fn(**parameters)
                 else:
+                    # Fallback for direct function (shouldn't happen with @app.tool)
+                    result = tool_obj(**parameters)
+
+                # A tool that returns an error payload is a FAILED call.
+                # These functions report failure by returning a dict rather than
+                # raising, so an unconditional "success" envelope here would show
+                # callers a green light on a run that never executed.
+                if isinstance(result, dict) and (
+                    result.get("status") == "error" or result.get("error")
+                ):
                     return {
                         "tool": tool_name,
                         "status": "error",
-                        "error": f"Function '{tool_name}' not implemented in main server",
+                        "error": result.get("error")
+                        or f"{tool_name} reported status='error'",
+                        "result": result,
                     }
 
-            except Exception as e:
-                logger.error(f"Error executing {tool_name}: {e}")
-                return {"tool": tool_name, "status": "error", "error": str(e)}
+                return {"tool": tool_name, "status": "success", "result": result}
+            else:
+                return {
+                    "tool": tool_name,
+                    "status": "error",
+                    "error": f"Function '{tool_name}' not implemented in main server",
+                }
+
+        except Exception as e:
+            logger.error(f"Error executing {tool_name}: {e}")
+            return {"tool": tool_name, "status": "error", "error": str(e)}
 
     def get_app(self) -> FastMCP:
         """Get the FastMCP app instance."""
