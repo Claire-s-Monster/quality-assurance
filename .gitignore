@@ -35,7 +35,8 @@ Thumbs.db
 
 # Session/Runtime data
 logs/
-.claude/quality-data/
-.claude/quality-baselines/
-.claude/session-notes/
-.claude/current-session-id
+
+# Local Claude Code / MCP tooling (machine-specific, managed by setup scripts)
+.claude/
+.mcp.json
+.serena/
