@@ -114,6 +114,71 @@ class TestTypecheckTaskResolution:
         assert "type-check" in result.raw_output
 
 
+class TestSecurityScanHonestFailure:
+    """execute_security_scan must not report a clean/scored result when bandit
+    never actually ran, and must not treat bandit's exit-1-on-findings as an
+    execution failure (same pattern as lint/typecheck, commit 4d9d638d)."""
+
+    def test_real_execution_failure_is_reported_as_error_not_clean_score(self):
+        pixi_executor = _FakePixiExecutor(
+            available_tasks={"security-scan": "bandit -r src/"},
+            run_result={
+                "success": False,
+                "stdout": "",
+                "stderr": "bandit: command not found",
+                "exit_code": 127,
+            },
+        )
+        adapter = QualityToolExecutionAdapter(direct_pixi_executor=pixi_executor)
+
+        result = adapter.execute_security_scan(project_path="/tmp/project")
+
+        assert result.status == ExecutionStatus.ERROR
+        assert result.parsed_metrics.overall_score == 0.0
+        assert "No security vulnerabilities detected." not in result.recommendations
+
+    def test_findings_on_nonzero_exit_are_not_swallowed_as_execution_error(self):
+        bandit_json = (
+            '{"results": [{"test_id": "B105", "test_name": "hardcoded_password_string", '
+            '"issue_text": "Possible hardcoded password", "issue_severity": "HIGH", '
+            '"issue_confidence": "HIGH", "filename": "src/app.py", "line_number": 12}]}'
+        )
+        pixi_executor = _FakePixiExecutor(
+            available_tasks={"security-scan": "bandit -r src/"},
+            run_result={
+                "success": False,
+                "stdout": bandit_json,
+                "stderr": "",
+                "exit_code": 1,
+            },
+        )
+        adapter = QualityToolExecutionAdapter(direct_pixi_executor=pixi_executor)
+
+        result = adapter.execute_security_scan(project_path="/tmp/project")
+
+        assert result.status != ExecutionStatus.ERROR
+        assert result.status == ExecutionStatus.WARNING
+        assert len(result.security_issues) == 1
+        assert result.parsed_metrics.overall_score != 10.0
+
+    def test_clean_scan_with_zero_findings_stays_clean(self):
+        pixi_executor = _FakePixiExecutor(
+            available_tasks={"security-scan": "bandit -r src/"},
+            run_result={
+                "success": True,
+                "stdout": '{"results": []}',
+                "stderr": "",
+                "exit_code": 0,
+            },
+        )
+        adapter = QualityToolExecutionAdapter(direct_pixi_executor=pixi_executor)
+
+        result = adapter.execute_security_scan(project_path="/tmp/project")
+
+        assert result.status == ExecutionStatus.SUCCESS
+        assert result.parsed_metrics.overall_score == 10.0
+
+
 class TestComplexityTaskResolution:
     """execute_complexity_analysis must resolve radon's task through
     aliases (complexity-check / complexity / radon)."""

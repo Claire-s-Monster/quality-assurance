@@ -18,6 +18,14 @@ import pytest
 # Add source paths
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from core.models import ExecutionStatus  # noqa: E402
+
+_NON_PASSING_EXECUTION_STATUSES = [
+    status.value
+    for status in ExecutionStatus
+    if status.value not in {"success", "warning"}
+]
+
 
 class TestLeanServerExecuteToolEnvelope:
     """Test that execute_tool wraps dispatched tool results in a correct envelope."""
@@ -143,6 +151,92 @@ class TestLeanServerExecuteToolEnvelope:
         assert envelope["error"] == "Tool 'definitely_not_a_real_tool' not found"
         assert isinstance(envelope["available_tools"], list)
         assert len(envelope["available_tools"]) > 0
+
+    def test_failure_status_produces_failed_envelope(
+        self, execute_tool_fn, main_server_module, monkeypatch
+    ):
+        """ExecutionStatus.FAILURE must not be wrapped in a success envelope."""
+
+        def stub_tool(**kwargs):
+            return {"status": "failure", "files_analyzed": 3}
+
+        monkeypatch.setattr(
+            main_server_module, "quality_execute_lint_assessment", stub_tool
+        )
+
+        envelope = execute_tool_fn("quality_execute_lint_assessment", {})
+
+        assert envelope["status"] == "error"
+
+    def test_timeout_status_produces_failed_envelope(
+        self, execute_tool_fn, main_server_module, monkeypatch
+    ):
+        """ExecutionStatus.TIMEOUT must not be wrapped in a success envelope."""
+
+        def stub_tool(**kwargs):
+            return {"status": "timeout"}
+
+        monkeypatch.setattr(
+            main_server_module, "quality_execute_lint_assessment", stub_tool
+        )
+
+        envelope = execute_tool_fn("quality_execute_lint_assessment", {})
+
+        assert envelope["status"] == "error"
+
+    def test_warning_status_produces_success_envelope(
+        self, execute_tool_fn, main_server_module, monkeypatch
+    ):
+        """ExecutionStatus.WARNING is a finding, not a failure, and must succeed."""
+
+        def stub_tool(**kwargs):
+            return {"status": "warning", "files_analyzed": 3}
+
+        monkeypatch.setattr(
+            main_server_module, "quality_execute_lint_assessment", stub_tool
+        )
+
+        envelope = execute_tool_fn("quality_execute_lint_assessment", {})
+
+        assert envelope["status"] == "success"
+
+    def test_healthy_status_outside_execution_status_produces_success_envelope(
+        self, execute_tool_fn, main_server_module, monkeypatch
+    ):
+        """Ad-hoc vocabularies like 'healthy' (used by health/capability tools) are
+        not ExecutionStatus members and must not be reclassified as failures.
+        """
+
+        def stub_tool(**kwargs):
+            return {"status": "healthy"}
+
+        monkeypatch.setattr(
+            main_server_module, "quality_execute_lint_assessment", stub_tool
+        )
+
+        envelope = execute_tool_fn("quality_execute_lint_assessment", {})
+
+        assert envelope["status"] == "success"
+
+    @pytest.mark.parametrize("status_value", _NON_PASSING_EXECUTION_STATUSES)
+    def test_every_non_passing_execution_status_fails_the_envelope(
+        self, execute_tool_fn, main_server_module, monkeypatch, status_value
+    ):
+        """Every ExecutionStatus member not explicitly declared passing must fail
+        the envelope. A newly added enum member fails this test until it is
+        classified as passing or left to the default failing behavior.
+        """
+
+        def stub_tool(**kwargs):
+            return {"status": status_value}
+
+        monkeypatch.setattr(
+            main_server_module, "quality_execute_lint_assessment", stub_tool
+        )
+
+        envelope = execute_tool_fn("quality_execute_lint_assessment", {})
+
+        assert envelope["status"] == "error"
 
 
 if __name__ == "__main__":
