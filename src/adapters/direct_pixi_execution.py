@@ -32,6 +32,10 @@ TOOL_TASK_ALIASES: Dict[str, tuple[str, ...]] = {
     "vulture": ("dead-code-check", "dead-code", "vulture"),
 }
 
+QUALITY_ENVIRONMENT_PREFERENCE: tuple[str, ...] = (
+    "quality", "lint", "quality-ci", "ci", "quality-extended", "quality-full", "dev",
+)
+
 
 def _resolve_pixi_executable() -> str:
     """Resolve the pixi binary.
@@ -588,6 +592,53 @@ class DirectPixiExecutionAdapter:
 
         except Exception:
             return {}
+
+    def environments_for_task(
+        self, task_name: str, working_dir: str | None = None
+    ) -> List[str]:
+        """Return every declared environment (manifest order, "default"
+        included) whose task set contains `task_name`."""
+        path = working_dir or self.working_dir
+        config = self._load_pixi_config(path)
+        names = list((config.get("environments", {}) or {}).keys())
+        if "default" not in names:
+            names.insert(0, "default")
+        return [
+            name for name in names
+            if task_name in self._get_available_tasks(path, name)
+        ]
+
+    def select_quality_environment(
+        self, task_name: str, working_dir: str | None = None
+    ) -> tuple[Optional[str], str]:
+        """Pick a pixi environment for a quality task when the caller gave none.
+
+        Returns (environment, reason). environment is None whenever no safe
+        choice exists, which keeps run_task's behaviour unchanged (pixi
+        decides, or reports the task as ambiguous).
+        """
+        path = working_dir or self.working_dir
+        config = self._load_pixi_config(path)
+        declared = [n for n in (config.get("environments", {}) or {}) if n != "default"]
+        if not declared:
+            return None, "no named pixi environments are declared"
+
+        candidates = self.environments_for_task(task_name, path)
+        if not candidates:
+            return None, f"task '{task_name}' is not defined in any declared environment"
+
+        for preferred in QUALITY_ENVIRONMENT_PREFERENCE:
+            if preferred in candidates:
+                return preferred, f"preferred environment among {candidates}"
+
+        non_default = [c for c in candidates if c != "default"]
+        if len(non_default) == 1:
+            return non_default[0], f"only non-default environment defining the task among {candidates}"
+
+        return None, (
+            f"ambiguous: task '{task_name}' is defined in {candidates} and none is a "
+            f"preferred quality environment; pass `environment` explicitly"
+        )
 
     # =========================================================================
     # QUALITY INTELLIGENCE METHODS

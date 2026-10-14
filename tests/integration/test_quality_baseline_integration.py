@@ -259,15 +259,15 @@ class TestQualityBaselineIntegration:
         orchestration_service = container.orchestration_service
         
         # Test handling of missing baseline
-        comparison_result = orchestration_service.compare_against_baseline(
-            baseline_id="non-existent-baseline",
-            suite_configuration=QualitySuiteConfiguration(
-                included_tools=[QualityTool.RUFF],
-                parallel_execution=False,
-                quality_threshold=7.0
+        # The service contract is to raise RuntimeError on any failure (the MCP
+        # tool layer converts it into an error payload); it must name the
+        # missing baseline rather than crash with a different exception.
+        with pytest.raises(RuntimeError, match="non-existent-baseline not found"):
+            orchestration_service.compare_against_baseline(
+                baseline_id="non-existent-baseline",
+                suite_configuration=QualitySuiteConfiguration(
+                    included_tools=[QualityTool.RUFF],
+                    parallel_execution=False,
+                    quality_threshold=7.0
+                )
             )
-        )
-        
-        # Should handle gracefully (specific behavior depends on implementation)
-        # At minimum, should not crash and should return some kind of result
-        assert comparison_result is not None

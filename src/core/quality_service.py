@@ -96,7 +96,7 @@ class QualityAssuranceService:
                 use_cache=use_cache
             )
 
-            self.logging.log_operation_result("lint_assessment", {
+            self.logging.log_operation_result("lint_assessment", True, result.execution_time_ms, {
                 "status": result.status.value,
                 "violations": len(result.violations),
                 "score": result.parsed_metrics.overall_score
@@ -105,7 +105,7 @@ class QualityAssuranceService:
             return result
 
         except Exception as e:
-            self.logging.log_error("lint_assessment", str(e))
+            self.logging.log_error(str(e), {"operation": "lint_assessment"})
             return self._create_error_result(
                 assessment_type=QualityAssessmentType.LINT,
                 tool=tool,
@@ -153,7 +153,7 @@ class QualityAssuranceService:
                 cache_dir=cache_dir
             )
 
-            self.logging.log_operation_result("typecheck_assessment", {
+            self.logging.log_operation_result("typecheck_assessment", True, result.execution_time_ms, {
                 "status": result.status.value,
                 "type_errors": result.parsed_metrics.type_errors,
                 "score": result.parsed_metrics.overall_score
@@ -162,7 +162,7 @@ class QualityAssuranceService:
             return result
 
         except Exception as e:
-            self.logging.log_error("typecheck_assessment", str(e))
+            self.logging.log_error(str(e), {"operation": "typecheck_assessment"})
             return self._create_error_result(
                 assessment_type=QualityAssessmentType.TYPECHECK,
                 tool=tool,
@@ -206,7 +206,7 @@ class QualityAssuranceService:
                 exclude_tests=exclude_tests
             )
 
-            self.logging.log_operation_result("security_scan", {
+            self.logging.log_operation_result("security_scan", True, result.execution_time_ms, {
                 "status": result.status.value,
                 "security_issues": len(result.security_issues),
                 "high_severity": result.parsed_metrics.high_security_issues
@@ -215,7 +215,7 @@ class QualityAssuranceService:
             return result
 
         except Exception as e:
-            self.logging.log_error("security_scan", str(e))
+            self.logging.log_error(str(e), {"operation": "security_scan"})
             return self._create_error_result(
                 assessment_type=QualityAssessmentType.SECURITY,
                 tool=tool,
@@ -259,7 +259,7 @@ class QualityAssuranceService:
                 include_metrics=include_metrics
             )
 
-            self.logging.log_operation_result("complexity_analysis", {
+            self.logging.log_operation_result("complexity_analysis", True, result.execution_time_ms, {
                 "status": result.status.value,
                 "avg_complexity": result.parsed_metrics.average_complexity,
                 "max_complexity": result.parsed_metrics.max_complexity
@@ -268,7 +268,7 @@ class QualityAssuranceService:
             return result
 
         except Exception as e:
-            self.logging.log_error("complexity_analysis", str(e))
+            self.logging.log_error(str(e), {"operation": "complexity_analysis"})
             return self._create_error_result(
                 assessment_type=QualityAssessmentType.COMPLEXITY,
                 tool=tool,
@@ -309,7 +309,7 @@ class QualityAssuranceService:
                 confidence_threshold=confidence_threshold
             )
 
-            self.logging.log_operation_result("dead_code_detection", {
+            self.logging.log_operation_result("dead_code_detection", True, result.execution_time_ms, {
                 "status": result.status.value,
                 "dead_code_count": result.parsed_metrics.dead_code_count,
                 "unused_imports": result.parsed_metrics.unused_imports
@@ -318,7 +318,7 @@ class QualityAssuranceService:
             return result
 
         except Exception as e:
-            self.logging.log_error("dead_code_detection", str(e))
+            self.logging.log_error(str(e), {"operation": "dead_code_detection"})
             return self._create_error_result(
                 assessment_type=QualityAssessmentType.DEAD_CODE,
                 tool=tool,
@@ -374,7 +374,7 @@ class QualityAssuranceService:
 
                     # Check fail-fast condition
                     if configuration.fail_fast and result.status == ExecutionStatus.FAILURE:
-                        self.logging.log_warning("comprehensive_suite", f"Fail-fast triggered by {tool.value}")
+                        self.logging.log_warning(f"Fail-fast triggered by {tool.value}", {"operation": "comprehensive_suite"})
                         break
 
                 except Exception as e:
@@ -410,7 +410,7 @@ class QualityAssuranceService:
             )
 
         except Exception as e:
-            self.logging.log_error("comprehensive_suite", str(e))
+            self.logging.log_error(str(e), {"operation": "comprehensive_suite"})
             # Return partial result with error information
             end_time = datetime.now()
             total_execution_time = (end_time - start_time).total_seconds() * 1000
@@ -569,7 +569,7 @@ class QualityAssuranceService:
             )
 
         except Exception as e:
-            self.logging.log_error("system_health", str(e))
+            self.logging.log_error(str(e), {"operation": "system_health"})
             return SystemHealth(
                 healthy=False,
                 timestamp=datetime.now().isoformat(),

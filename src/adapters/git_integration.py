@@ -125,7 +125,10 @@ class GitIntegrationAdapter:
             }
             
             if self.logging:
-                self.logging.log_error("get_git_metadata", str(e), {'working_dir': str(self.working_dir)})
+                self.logging.log_error(
+                    f"get_git_metadata failed: {e}",
+                    {'operation': 'get_git_metadata', 'working_dir': str(self.working_dir)},
+                )
             
             return error_metadata
 

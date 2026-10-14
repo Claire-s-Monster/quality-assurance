@@ -40,6 +40,8 @@ class _FakeLintResult:
         self.status = ExecutionStatus.SUCCESS
         self.execution_time_ms = 5
         self.pixi_task_used = "lint"
+        self.environment_used = None
+        self.environment_auto_selected = False
         self.target_path = "src/"
         self.files_analyzed = 0
         self.violations = []

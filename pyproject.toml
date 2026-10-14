@@ -315,7 +315,7 @@ dev = { cmd = "pixi run install-editable", env = { PYTHONPATH = "src" } }
 test = { cmd = "pixi run -e quality pytest tests/ -v --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-cov = { cmd = "pixi run -e quality pytest tests/ --cov=src/quality_assurance --cov-report=term-missing --cov-report=xml --timeout=60", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-fast = { cmd = "pixi run -e quality pytest tests/ -x --ff --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
-test-unit = { cmd = "pixi run -e quality pytest tests/unit/ -v --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
+test-unit = { cmd = "pixi run -e quality pytest tests/adapters/ tests/core/ -v --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-integration = { cmd = "pixi run -e quality pytest tests/integration/ -v --timeout=60", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-e2e = { cmd = "pixi run -e quality pytest tests/e2e/ -v --timeout=120", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-property = { cmd = "pixi run -e quality pytest tests/ -m property -v --timeout=60", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }

@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any, Optional, Dict, List
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pathlib import Path
 
 
@@ -174,7 +174,9 @@ class QualityAssessmentResult(BaseModel):
     end_time: str = Field(description="Assessment completion timestamp (ISO8601)")
     execution_time_ms: float = Field(description="Execution time in milliseconds")
     pixi_task_used: str = Field(description="Pixi task executed for assessment")
-    
+    environment_used: Optional[str] = Field(None, description="Pixi environment the task ran in (None = pixi default)")
+    environment_auto_selected: bool = Field(default=False, description="Whether the environment was chosen automatically")
+
     # Assessment scope
     target_path: str = Field(description="Path that was assessed")
     files_analyzed: int = Field(description="Number of files analyzed")
@@ -215,8 +217,11 @@ class QualityBaseline(BaseModel):
     
     # Quality metrics at baseline
     metrics: QualityMetrics = Field(description="Quality metrics at time of baseline")
-    overall_score: float = Field(description="Overall quality score for this baseline")
-    
+    overall_score: Optional[float] = Field(
+        None,
+        description="Overall quality score for this baseline (defaults to metrics.overall_score)",
+    )
+
     # Tool versions used
     tool_versions: Dict[str, str] = Field(default_factory=dict, description="Versions of tools used")
     python_version: str = Field(description="Python version used")
@@ -226,6 +231,13 @@ class QualityBaseline(BaseModel):
     retention_days: int = Field(default=365, description="Days to retain this baseline")
     expires_at: str = Field(description="Baseline expiration timestamp (ISO8601)")
     tags: List[str] = Field(default_factory=list, description="Baseline tags for organization")
+
+    @model_validator(mode="after")
+    def _default_overall_score(self) -> "QualityBaseline":
+        """Derive overall_score from metrics when not supplied (older stored baselines)."""
+        if self.overall_score is None:
+            self.overall_score = self.metrics.overall_score
+        return self
 
 
 class QualityComparison(BaseModel):

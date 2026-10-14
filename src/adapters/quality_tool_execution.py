@@ -59,6 +59,28 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             tool_value, working_dir=project_path, environment=environment
         )
 
+    def _select_environment(
+        self, pixi_task: str, project_path: Optional[str], environment: Optional[str]
+    ) -> tuple[Optional[str], bool, List[str]]:
+        """Choose the pixi environment to run `pixi_task` in.
+
+        An explicit caller-supplied environment always wins. Otherwise the
+        executor may auto-select one. Returns (environment, auto_selected,
+        recommendation_notes).
+        """
+        if environment:
+            return environment, False, []
+        selected, reason = self.pixi_executor.select_quality_environment(
+            pixi_task, working_dir=project_path
+        )
+        if not selected:
+            return None, False, []
+        note = (
+            f"ℹ️ No environment given; ran '{pixi_task}' in pixi environment "
+            f"'{selected}' ({reason})"
+        )
+        return selected, True, [note]
+
     def _describe_task_not_found(
         self, tool_value: str, project_path: Optional[str]
     ) -> tuple[str, str]:
@@ -142,6 +164,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 args.append("--output-format=json")
 
             # Execute pixi task
+            environment, env_auto, env_notes = self._select_environment(pixi_task, project_path, environment)
             result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300, working_dir=project_path, environment=environment)
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
@@ -181,7 +204,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                         execution_time_ms=execution_time_ms,
                         error_msg=self._describe_execution_failure(result, pixi_task),
                         target_path=target_path,
-                        pixi_task_used=pixi_task
+                        pixi_task_used=pixi_task,
+                        environment_used=environment,
+                        environment_auto_selected=env_auto,
                     )
 
                 status = ExecutionStatus.WARNING
@@ -194,12 +219,14 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 end_time=end_time,
                 execution_time_ms=execution_time_ms,
                 pixi_task_used=pixi_task,
+                environment_used=environment,
+                environment_auto_selected=env_auto,
                 target_path=target_path,
                 files_analyzed=metrics.total_lines // 50 if metrics.total_lines > 0 else 1,  # Estimate
                 raw_output=result.get("stdout", "") + "\n" + result.get("stderr", ""),
                 parsed_metrics=metrics,
                 violations=violations,
-                recommendations=self._generate_lint_recommendations(violations, tool),
+                recommendations=env_notes + self._generate_lint_recommendations(violations, tool),
                 auto_fix_available=fix_mode and tool == QualityTool.RUFF,
                 fix_commands=["pixi run lint --fix"] if fix_mode and tool == QualityTool.RUFF else []
             )
@@ -272,6 +299,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             args.extend(["--show-error-codes", "--show-column-numbers"])
 
             # Execute pixi task
+            environment, env_auto, env_notes = self._select_environment(pixi_task, project_path, environment)
             result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300, working_dir=project_path, environment=environment)
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
@@ -298,7 +326,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                         execution_time_ms=execution_time_ms,
                         error_msg=self._describe_execution_failure(result, pixi_task),
                         target_path=target_path,
-                        pixi_task_used=pixi_task
+                        pixi_task_used=pixi_task,
+                        environment_used=environment,
+                        environment_auto_selected=env_auto,
                     )
 
                 status = ExecutionStatus.WARNING
@@ -325,12 +355,14 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 end_time=end_time,
                 execution_time_ms=execution_time_ms,
                 pixi_task_used=pixi_task,
+                environment_used=environment,
+                environment_auto_selected=env_auto,
                 target_path=target_path,
                 files_analyzed=len(set(v.file_path for v in violations)) if violations else 1,
                 raw_output=result.get("stdout", "") + "\n" + result.get("stderr", ""),
                 parsed_metrics=metrics,
                 violations=violations,
-                recommendations=self._generate_typecheck_recommendations(violations, type_errors),
+                recommendations=env_notes + self._generate_typecheck_recommendations(violations, type_errors),
                 auto_fix_available=False,  # mypy doesn't support auto-fixing
                 fix_commands=[]
             )
@@ -405,6 +437,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             args.extend(["-r", target_path])
 
             # Execute pixi task
+            environment, env_auto, env_notes = self._select_environment(pixi_task, project_path, environment)
             result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300, working_dir=project_path, environment=environment)
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
@@ -453,13 +486,15 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 end_time=end_time,
                 execution_time_ms=execution_time_ms,
                 pixi_task_used=pixi_task,
+                environment_used=environment,
+                environment_auto_selected=env_auto,
                 target_path=target_path,
                 files_analyzed=len(set(issue.file_path for issue in security_issues)) if security_issues else 1,
                 raw_output=result.get("stdout", ""),
                 parsed_metrics=metrics,
                 violations=violations,
                 security_issues=security_issues,
-                recommendations=self._generate_security_recommendations(security_issues),
+                recommendations=env_notes + self._generate_security_recommendations(security_issues),
                 auto_fix_available=False,  # Security fixes should be manual
                 fix_commands=[]
             )
@@ -523,6 +558,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 args.extend(["--min", str(complexity_threshold)])
 
             # Execute pixi task
+            environment, env_auto, env_notes = self._select_environment(pixi_task, project_path, environment)
             result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300, working_dir=project_path, environment=environment)
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
@@ -535,7 +571,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             if stdout:
                 complexity_results, violations = self._parse_radon_output(stdout, complexity_threshold)
 
-            # If maintainability is requested, run second command
+            # If maintainability is requested (default), run second command
+            include_maintainability = include_metrics is None or "mi" in include_metrics
             if include_maintainability:
                 mi_args = ["mi", "src/", "--json"]
                 mi_result = self.pixi_executor.run_task(pixi_task, args=mi_args, timeout=300, working_dir=project_path, environment=environment)
@@ -576,13 +613,15 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 end_time=end_time,
                 execution_time_ms=execution_time_ms,
                 pixi_task_used=pixi_task,
+                environment_used=environment,
+                environment_auto_selected=env_auto,
                 target_path=target_path,
                 files_analyzed=len(set(cr.name.split('.')[0] for cr in complexity_results)) if complexity_results else 1,
                 raw_output=result.get("stdout", ""),
                 parsed_metrics=metrics,
                 violations=violations,
                 complexity_results=complexity_results,
-                recommendations=self._generate_complexity_recommendations(complexity_results, avg_complexity, complexity_threshold),
+                recommendations=env_notes + self._generate_complexity_recommendations(complexity_results, avg_complexity, complexity_threshold),
                 auto_fix_available=False,  # Complexity requires manual refactoring
                 fix_commands=[]
             )
@@ -643,7 +682,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                     args.extend(["--exclude", pattern])
 
             # Execute pixi task
-            result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300)
+            environment, env_auto, env_notes = self._select_environment(pixi_task, None, None)
+            result = self.pixi_executor.run_task(pixi_task, args=args, timeout=300, environment=environment)
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
 
@@ -686,13 +726,15 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 end_time=end_time,
                 execution_time_ms=execution_time_ms,
                 pixi_task_used=pixi_task,
+                environment_used=environment,
+                environment_auto_selected=env_auto,
                 target_path=target_path,
                 files_analyzed=len(set(dcr.file_path for dcr in dead_code_results)) if dead_code_results else 1,
                 raw_output=result.get("stdout", ""),
                 parsed_metrics=metrics,
                 violations=violations,
                 dead_code_results=dead_code_results,
-                recommendations=self._generate_dead_code_recommendations(dead_code_results, unused_imports),
+                recommendations=env_notes + self._generate_dead_code_recommendations(dead_code_results, unused_imports),
                 auto_fix_available=unused_imports > 0,  # Can auto-remove unused imports
                 fix_commands=["pixi run lint --fix"] if unused_imports > 0 else []
             )
@@ -1298,7 +1340,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         execution_time_ms: float,
         error_msg: str,
         target_path: str,
-        pixi_task_used: str
+        pixi_task_used: str,
+        environment_used: Optional[str] = None,
+        environment_auto_selected: bool = False,
     ) -> QualityAssessmentResult:
         """Create an error result for failed assessments."""
         
@@ -1323,6 +1367,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             end_time=datetime.now(UTC).isoformat(),
             execution_time_ms=execution_time_ms,
             pixi_task_used=pixi_task_used,
+            environment_used=environment_used,
+            environment_auto_selected=environment_auto_selected,
             target_path=target_path,
             files_analyzed=0,
             raw_output=f"Error: {error_msg}",

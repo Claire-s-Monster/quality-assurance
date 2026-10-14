@@ -81,9 +81,12 @@ class Container:
         # Quality analysis adapter
         self._adapters["quality_analyzer"] = QualityAnalysisAdapter()
         
-        # Quality data storage adapter
+        # Quality data storage adapter. The trend analyzer shares this root so
+        # baselines written through either adapter are visible to both
+        # (<root>/baselines/<id>.json).
+        quality_data_root = str(Path(self._working_dir) / ".claude" / "quality-data")
         self._adapters["data_storage"] = QualityDataStorageAdapter(
-            storage_root=str(Path(self._working_dir) / ".claude" / "quality-data")
+            storage_root=quality_data_root
         )
         
         # Git integration adapter
@@ -92,9 +95,9 @@ class Container:
             logging=self._adapters["logging"]
         )
         
-        # Quality trend analysis adapter (now uses data storage instead of direct file access)
+        # Quality trend analysis adapter (shares the data storage root)
         self._adapters["trend_analyzer"] = QualityTrendAnalysisAdapter(
-            storage_path=str(Path(self._working_dir) / ".claude" / "quality-baselines")
+            storage_path=quality_data_root
         )
         
         # Automated fix adapter

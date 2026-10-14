@@ -220,7 +220,8 @@ class QualityOrchestrationService:
             execution_time = (time.time() - operation_start) * 1000
             error_msg = f"Lint assessment failed: {str(e)}"
             
-            self.logging.log_error("execute_lint_assessment", error_msg, {
+            self.logging.log_error(error_msg, {
+                "operation": "execute_lint_assessment",
                 "tool": tool.value,
                 "target_path": target_path
             })
@@ -275,8 +276,9 @@ class QualityOrchestrationService:
                     configuration.included_tools
                 )
                 if not tool_validation.all_tools_available:
-                    self.logging.log_warning("execute_comprehensive_suite", 
-                                            f"Some tools unavailable: {tool_validation.missing_tools}")
+                    self.logging.log_warning(
+                        f"Some tools unavailable: {tool_validation.missing_tools}",
+                        {"operation": "execute_comprehensive_suite"})
             
             individual_results = []
             failed_tools = []
@@ -318,8 +320,9 @@ class QualityOrchestrationService:
                     report_generated = True
                     report_path = report.report_path
                 except Exception as e:
-                    self.logging.log_warning("execute_comprehensive_suite", 
-                                           f"Report generation failed: {e}")
+                    self.logging.log_warning(
+                        f"Report generation failed: {e}",
+                        {"operation": "execute_comprehensive_suite"})
             
             # Create comprehensive result
             result = ComprehensiveQualityResult(
@@ -356,7 +359,8 @@ class QualityOrchestrationService:
             execution_time = (time.time() - suite_start) * 1000
             error_msg = f"Comprehensive suite execution failed: {str(e)}"
             
-            self.logging.log_error("execute_comprehensive_suite", error_msg, {
+            self.logging.log_error(error_msg, {
+                "operation": "execute_comprehensive_suite",
                 "suite_id": suite_id,
                 "tools": [tool.value for tool in configuration.included_tools]
             })
@@ -437,7 +441,9 @@ class QualityOrchestrationService:
                     else:
                         self.logging.log_info("Not a git repository - baseline will have limited traceability")
                 except Exception as e:
-                    self.logging.log_warning("establish_quality_baseline", f"Failed to auto-detect git info: {e}")
+                    self.logging.log_warning(
+                        f"Failed to auto-detect git info: {e}",
+                        {"operation": "establish_quality_baseline"})
             
             # Generate baseline ID if not provided
             if not baseline_id:
@@ -480,8 +486,9 @@ class QualityOrchestrationService:
                     python_version = project_info.get("python_version", python_version)
                     pixi_environment = project_info
                 except Exception as e:
-                    self.logging.log_warning("establish_quality_baseline", 
-                                           f"Failed to get pixi info: {e}")
+                    self.logging.log_warning(
+                        f"Failed to get pixi info: {e}",
+                        {"operation": "establish_quality_baseline"})
             
             if self.tool_management:
                 for tool in suite_configuration.included_tools:
@@ -490,8 +497,9 @@ class QualityOrchestrationService:
                         if version:
                             tool_versions[tool.value] = version
                     except Exception as e:
-                        self.logging.log_warning("establish_quality_baseline", 
-                                               f"Failed to get version for {tool.value}: {e}")
+                        self.logging.log_warning(
+                            f"Failed to get version for {tool.value}: {e}",
+                            {"operation": "establish_quality_baseline"})
             
             # Create baseline using trend analyzer
             baseline = self.trend_analyzer.establish_baseline(
@@ -518,7 +526,8 @@ class QualityOrchestrationService:
             
         except Exception as e:
             error_msg = f"Baseline establishment failed: {str(e)}"
-            self.logging.log_error("establish_quality_baseline", error_msg, {
+            self.logging.log_error(error_msg, {
+                "operation": "establish_quality_baseline",
                 "baseline_id": baseline_id,
                 "project_name": project_name
             })
@@ -571,7 +580,8 @@ class QualityOrchestrationService:
             
         except Exception as e:
             error_msg = f"Baseline comparison failed: {str(e)}"
-            self.logging.log_error("compare_against_baseline", error_msg, {
+            self.logging.log_error(error_msg, {
+                "operation": "compare_against_baseline",
                 "baseline_id": baseline_id
             })
             raise RuntimeError(error_msg)
@@ -630,7 +640,8 @@ class QualityOrchestrationService:
             
         except Exception as e:
             error_msg = f"Automated fix application failed: {str(e)}"
-            self.logging.log_error("apply_automated_fixes", error_msg, {
+            self.logging.log_error(error_msg, {
+                "operation": "apply_automated_fixes",
                 "fix_types": [ft.value for ft in fix_types]
             })
             raise RuntimeError(error_msg)
@@ -703,7 +714,8 @@ class QualityOrchestrationService:
             
         except Exception as e:
             error_msg = f"Quality report generation failed: {str(e)}"
-            self.logging.log_error("generate_quality_report", error_msg, {
+            self.logging.log_error(error_msg, {
+                "operation": "generate_quality_report",
                 "format": format.value,
                 "template": template.value
             })
@@ -791,7 +803,7 @@ class QualityOrchestrationService:
             
         except Exception as e:
             error_msg = f"Quality recommendations generation failed: {str(e)}"
-            self.logging.log_error("get_quality_recommendations", error_msg)
+            self.logging.log_error(error_msg, {"operation": "get_quality_recommendations"})
             raise RuntimeError(error_msg)
 
     def health_check(self) -> SystemHealth:
@@ -905,7 +917,7 @@ class QualityOrchestrationService:
             
         except Exception as e:
             error_msg = f"Health check failed: {str(e)}"
-            self.logging.log_error("health_check", error_msg)
+            self.logging.log_error(error_msg, {"operation": "health_check"})
             
             return SystemHealth(
                 healthy=False,
@@ -973,8 +985,9 @@ class QualityOrchestrationService:
                 futures[tool] = future
                 
             except Exception as e:
-                self.logging.log_warning("_execute_tools_parallel", 
-                                       f"Failed to start {tool.value}: {e}")
+                self.logging.log_warning(
+                    f"Failed to start {tool.value}: {e}",
+                    {"operation": "_execute_tools_parallel"})
                 failed_tools.append(tool)
         
         # Collect results
@@ -983,12 +996,14 @@ class QualityOrchestrationService:
                 result = future.result(timeout=300)  # 5 minute timeout per tool
                 individual_results.append(result)
             except concurrent.futures.TimeoutError:
-                self.logging.log_error("_execute_tools_parallel", 
-                                     f"Tool {tool.value} timed out")
+                self.logging.log_error(
+                    f"Tool {tool.value} timed out",
+                    {"operation": "_execute_tools_parallel"})
                 failed_tools.append(tool)
             except Exception as e:
-                self.logging.log_error("_execute_tools_parallel", 
-                                     f"Tool {tool.value} failed: {e}")
+                self.logging.log_error(
+                    f"Tool {tool.value} failed: {e}",
+                    {"operation": "_execute_tools_parallel"})
                 failed_tools.append(tool)
         
         return individual_results, failed_tools, skipped_tools
@@ -1034,8 +1049,9 @@ class QualityOrchestrationService:
                         break
                 
             except Exception as e:
-                self.logging.log_error("_execute_tools_sequential", 
-                                     f"Tool {tool.value} failed: {e}")
+                self.logging.log_error(
+                    f"Tool {tool.value} failed: {e}",
+                    {"operation": "_execute_tools_sequential"})
                 failed_tools.append(tool)
                 
                 # Check fail-fast mode
@@ -1279,4 +1295,4 @@ class QualityOrchestrationService:
             self._executor.shutdown(wait=True)
             self.logging.log_info("Quality orchestration service cleanup completed")
         except Exception as e:
-            self.logging.log_error("cleanup", f"Error during cleanup: {e}")
+            self.logging.log_error(f"Error during cleanup: {e}", {"operation": "cleanup"})

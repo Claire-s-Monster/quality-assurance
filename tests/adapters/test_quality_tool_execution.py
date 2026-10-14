@@ -47,6 +47,9 @@ class _FakePixiExecutor:
                 return candidate
         return None
 
+    def select_quality_environment(self, task_name, working_dir=None):
+        return None, "fake executor declares no environments"
+
     def list_tasks(self, working_dir=None):
         return {"tasks": dict(self._available_tasks)}
 

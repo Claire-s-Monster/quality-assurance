@@ -40,27 +40,33 @@ class LoggingPort(ABC):
     """Port for logging operations."""
 
     @abstractmethod
-    def log_operation(self, operation: str, details: Dict[str, Any] = None) -> None:
+    def log_operation(self, operation: str, details: Optional[Dict[str, Any]] = None) -> None:
         """Log an operation."""
         pass
 
     @abstractmethod
-    def log_operation_result(self, operation: str, result: Dict[str, Any]) -> None:
+    def log_operation_result(
+        self,
+        operation: str,
+        success: bool,
+        execution_time_ms: float,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Log operation result."""
         pass
 
     @abstractmethod
-    def log_error(self, operation: str, error: str, details: Dict[str, Any] = None) -> None:
-        """Log an error."""
+    def log_error(self, message: str, context: Optional[Dict[str, Any]] = None) -> None:
+        """Log an error (message first; put the operation name in context)."""
         pass
 
     @abstractmethod
-    def log_warning(self, operation: str, message: str, details: Dict[str, Any] = None) -> None:
-        """Log a warning."""
+    def log_warning(self, message: str, context: Optional[Dict[str, Any]] = None) -> None:
+        """Log a warning (message first; put the operation name in context)."""
         pass
 
     @abstractmethod
-    def log_info(self, message: str, details: Dict[str, Any] = None) -> None:
+    def log_info(self, message: str, context: Optional[Dict[str, Any]] = None) -> None:
         """Log informational message."""
         pass
 
@@ -708,14 +714,4 @@ class QualityAuditPort(ABC):
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """Get audit log entries."""
-        pass
-
-    @abstractmethod
-    def log_error(
-        self,
-        operation: str,
-        error_message: str,
-        context: Dict[str, Any]
-    ) -> None:
-        """Log error with context."""
         pass
