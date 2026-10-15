@@ -77,7 +77,9 @@ class TestRunQualityTaskEnvironmentForwarding:
         logging_port = Mock()
         adapter = DirectPixiExecutionAdapter(logging=logging_port, working_dir="/tmp/project")
         adapter._is_pixi_project = Mock(return_value=True)
-        adapter._get_available_tasks = Mock(return_value={"lint": "ruff check src/"})
+        # Bare-tool body: appended tool args are valid. A full-command body is
+        # covered in test_task_body_aware_args.py.
+        adapter._get_available_tasks = Mock(return_value={"lint": "ruff"})
         env_info = Mock()
         env_info.available_tools = {"ruff"}
         env_info.tool_versions = {}

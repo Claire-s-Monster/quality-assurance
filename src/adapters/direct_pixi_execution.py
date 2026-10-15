@@ -127,10 +127,14 @@ class DirectPixiExecutionAdapter:
         args: List[str] = None,
         timeout: int = 300,
         working_dir: str | None = None,
-        environment: str | None = None
+        environment: str | None = None,
+        as_command: bool = False
     ) -> Dict[str, Any]:
         """
         Execute a pixi task with arguments.
+
+        With `as_command=True`, `task_name` is an executable run via
+        `pixi run` (not a manifest task), so the task-existence check is skipped.
 
         Returns: {"success": bool, "stdout": str, "stderr": str, "exit_code": int, "execution_time": float}
         """
@@ -153,7 +157,7 @@ class DirectPixiExecutionAdapter:
 
             # Check if task exists
             available_tasks = self._get_available_tasks(working_dir, environment)
-            if task_name not in available_tasks:
+            if not as_command and task_name not in available_tasks:
                 return {
                     "success": False,
                     "stdout": "",
@@ -713,14 +717,45 @@ class DirectPixiExecutionAdapter:
                 quality_tool, target_paths, quality_config
             )
 
-            # Execute the pixi task with enhanced monitoring
-            base_result = self.run_task(
-                task_name=task_name,
-                args=optimized_args,
-                timeout=timeout,
-                working_dir=working_dir,
-                environment=environment
-            )
+            # Appending the tool's own args is only valid when the task body is
+            # the bare tool; any other body must not be run with them appended.
+            body = self._get_available_tasks(working_dir, environment).get(task_name)
+            if body is not None and not isinstance(body, (str, list)):
+                return {
+                    "success": False,
+                    "stdout": "",
+                    "stderr": (
+                        f"Cannot read the body of pixi task '{task_name}' "
+                        f"(unsupported type {type(body).__name__}); not running it"
+                    ),
+                    "exit_code": 1,
+                    "execution_time": time.time() - start_time,
+                    "task_name": task_name,
+                    "working_dir": working_dir
+                }
+
+            if body is None or self._is_bare_tool_body(body, quality_tool):
+                body_mode = "task"
+                base_result = self.run_task(
+                    task_name=task_name,
+                    args=optimized_args,
+                    timeout=timeout,
+                    working_dir=working_dir,
+                    environment=environment
+                )
+            else:
+                body_mode = "direct_tool"
+                if environment is None:
+                    environment, _ = self.select_quality_environment(task_name, working_dir)
+                base_result = self.run_task(
+                    task_name=quality_tool,
+                    args=optimized_args,
+                    timeout=timeout,
+                    working_dir=working_dir,
+                    environment=environment,
+                    as_command=True
+                )
+            base_result["task_body_mode"] = body_mode
 
             # Enhance result with quality intelligence
             enhanced_result = self._enhance_quality_result(
@@ -1239,6 +1274,12 @@ class DirectPixiExecutionAdapter:
             "cache_friendly": "ruff" in available_tools
         }
 
+    @staticmethod
+    def _is_bare_tool_body(body: str | List[str], quality_tool: str) -> bool:
+        """True when a task body (string, or `cmd` list) is just the tool name."""
+        tokens = body if isinstance(body, list) else body.split()
+        return [str(t) for t in tokens] == [quality_tool]
+
     def _generate_quality_args(
         self,
         quality_tool: str,
@@ -1349,15 +1390,41 @@ class DirectPixiExecutionAdapter:
             "recommendations": env_info.recommendations[:3]  # Top 3 recommendations
         }
 
-        # Add parsed output if possible
-        if enhanced_result["success"] and enhanced_result["stdout"]:
+        # Linters exit 1 when they FIND issues (any other non-zero exit, or an
+        # "error" key, means the tool did not run). Such a run stays
+        # success=False but its parsed counts are kept -- only when the output
+        # really parses to findings, so a crash is never read as a result.
+        exit_code = enhanced_result.get("exit_code")
+        found_issues = (
+            not enhanced_result["success"]
+            and exit_code == 1
+            and not enhanced_result.get("error")
+        )
+
+        if (enhanced_result["success"] or found_issues) and enhanced_result["stdout"]:
             parsed_output = self._parse_quality_output(
                 quality_tool, enhanced_result["stdout"], enhanced_result["stderr"]
             )
-            if parsed_output:
+            if parsed_output and found_issues:
+                if self._parsed_finding_count(parsed_output) > 0:
+                    enhanced_result["parsed_output"] = parsed_output
+                    enhanced_result["findings_detected"] = True
+            elif parsed_output:
                 enhanced_result["parsed_output"] = parsed_output
 
         return enhanced_result
+
+    @staticmethod
+    def _parsed_finding_count(parsed_output: Dict[str, Any]) -> int:
+        """Number of genuinely parsed findings; 0 when the output did not parse
+        into structured findings (e.g. ruff's text fallback, bandit raw_output)."""
+        violations = parsed_output.get("violations")
+        if violations is not None and not all(isinstance(v, dict) for v in violations):
+            return 0
+        for key in ("violation_count", "error_count", "issue_count"):
+            if key in parsed_output:
+                return parsed_output[key]
+        return 0
 
     def _parse_quality_output(
         self,
