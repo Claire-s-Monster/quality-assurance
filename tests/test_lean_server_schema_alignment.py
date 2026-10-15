@@ -11,11 +11,10 @@ This test ensures that:
 Run with: pixi run python -m pytest tests/test_lean_server_schema_alignment.py -v
 """
 
-import ast
 import inspect
 import sys
 from pathlib import Path
-from typing import Dict, Any, Set, List
+from typing import Dict, Any, Set
 
 import pytest
 
@@ -173,7 +172,7 @@ class TestLeanServerSchemaAlignment:
             except Exception as e:
                 invocation_errors.append(f"{tool_name}: {e}")
 
-        assert not invocation_errors, f"Invocation errors:\n" + "\n".join(
+        assert not invocation_errors, "Invocation errors:\n" + "\n".join(
             invocation_errors
         )
 
@@ -200,7 +199,7 @@ class TestSchemaAlignmentReport:
 
             if not hasattr(main_server, tool_name):
                 print(f"\n❌ {tool_name}")
-                print(f"   ERROR: Tool not found in main server!")
+                print("   ERROR: Tool not found in main server!")
                 all_passed = False
                 continue
 
@@ -208,7 +207,7 @@ class TestSchemaAlignmentReport:
 
             if not hasattr(tool_obj, "fn"):
                 print(f"\n❌ {tool_name}")
-                print(f"   ERROR: Not a FunctionTool (no .fn attribute)")
+                print("   ERROR: Not a FunctionTool (no .fn attribute)")
                 all_passed = False
                 continue
 

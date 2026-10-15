@@ -3,8 +3,7 @@ Dependency injection container for Agent Ecosystem MCP Server.
 Provides centralized configuration and instance management.
 """
 
-from typing import Dict, Any, Optional, TypeVar, Type, List
-import logging
+from typing import Dict, Any, Optional, TypeVar, List
 import sys
 import os
 from pathlib import Path

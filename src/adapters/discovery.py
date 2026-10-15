@@ -9,7 +9,7 @@ import yaml
 import sys
 import os
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 import hashlib
 
@@ -103,7 +103,7 @@ class AgentDiscoveryAdapter(AgentDiscoveryPort):
                             or agent.classification.category in categories
                         ):
                             agents.append(agent)
-                except Exception as e:
+                except Exception:
                     # Log error but continue discovery
                     continue
 
@@ -165,7 +165,7 @@ class AgentDiscoveryAdapter(AgentDiscoveryPort):
 
             return agent
 
-        except Exception as e:
+        except Exception:
             # Return None for unparseable files
             return None
 

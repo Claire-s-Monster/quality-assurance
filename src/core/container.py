@@ -7,7 +7,6 @@ as the agent-cache server, ensuring consistent architecture for quality tools.
 
 import os
 from pathlib import Path
-from typing import Dict, Any
 
 from adapters.environment import EnvironmentAdapter
 from adapters.execution import PixiExecutionAdapter

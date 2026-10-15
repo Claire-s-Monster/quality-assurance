@@ -10,12 +10,10 @@ import tempfile
 from datetime import datetime, UTC, timedelta
 from pathlib import Path
 import pytest
-from unittest.mock import patch
 
 from core.models import (
     QualityAssessmentResult,
     QualityAssessmentType,
-    QualityBaseline,
     QualityComparison,
     QualityMetrics,
     QualityTool,

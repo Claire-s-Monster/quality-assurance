@@ -3,19 +3,13 @@ Command-agent analysis adapter for dependency impact assessment.
 Critical for safe agent deletion and ecosystem health monitoring.
 """
 
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any
 from datetime import datetime
-import time
 
-from core.ports import AgentCommandAnalysisPort, EcosystemHealthPort
+from core.ports import AgentCommandAnalysisPort
 from core.models import (
     AgentUsageAnalysis,
     CommandAgentDependency,
-    EcosystemHealthReport,
-    Command,
-    Agent,
-    CommandDiscoveryResult,
-    DiscoveryResult,
 )
 from adapters.command_discovery import CommandDiscoveryAdapter
 from adapters.discovery import AgentDiscoveryAdapter

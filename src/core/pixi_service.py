@@ -7,18 +7,10 @@ providing thread-safe operations with comprehensive validation.
 
 import os
 import time
-from pathlib import Path
 from typing import Any
 
 from core.models import (
     PixiExecutionContext,
-    PixiHealthCheck,
-    PixiOperationResult,
-    PixiProjectInfo,
-    PixiTaskDefinition,
-    PixiTaskResult,
-    PixiEnvironmentInfo,
-    PixiDependency,
 )
 from core.ports import (
     PixiExecutorPort,
@@ -160,7 +152,7 @@ class PixiShellService:
             available_tasks = self.pixi_project.get_available_tasks(working_dir)
 
             self.logging.log_info(
-                f"Listed pixi tasks",
+                "Listed pixi tasks",
                 {"task_count": len(available_tasks), "working_dir": working_dir},
             )
 

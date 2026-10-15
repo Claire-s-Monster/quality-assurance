@@ -6,7 +6,6 @@ commit hashes, branch names, repository status, and other git-related metadata
 with graceful handling of non-git projects.
 """
 
-import os
 import subprocess
 import time
 from datetime import UTC, datetime

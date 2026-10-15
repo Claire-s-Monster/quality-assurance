@@ -6,7 +6,7 @@ Handles scanning command directories and parsing agent references.
 import re
 import hashlib
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 import time
 
@@ -148,7 +148,7 @@ class CommandDiscoveryAdapter(CommandDiscoveryPort):
                                 or command.command_type.value in command_types
                             ):
                                 commands.append(command)
-                    except Exception as e:
+                    except Exception:
                         # Log error but continue discovery
                         continue
 
@@ -214,7 +214,7 @@ class CommandDiscoveryAdapter(CommandDiscoveryPort):
 
             return command
 
-        except Exception as e:
+        except Exception:
             # Return None for unparseable files
             return None
 
@@ -330,7 +330,7 @@ class CommandDiscoveryAdapter(CommandDiscoveryPort):
 
             return unique_references
 
-        except Exception as e:
+        except Exception:
             return []
 
     def _determine_usage_pattern(self, context: str, reference_type: str) -> str:

@@ -2,7 +2,6 @@
 Agent lifecycle adapter for managing agent creation, updates, and deprecation.
 """
 
-import os
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -89,7 +88,7 @@ class AgentLifecycleAdapter(AgentLifecyclePort):
                 if not validation_result.is_valid:
                     return AgentOperation(
                         success=False,
-                        message=f"Agent validation failed before update",
+                        message="Agent validation failed before update",
                         agent_path=agent_path,
                         operation_type="update",
                     )
@@ -109,7 +108,7 @@ class AgentLifecycleAdapter(AgentLifecyclePort):
 
             return AgentOperation(
                 success=True,
-                message=f"Agent updated successfully",
+                message="Agent updated successfully",
                 agent_path=agent_path,
                 operation_type="update",
             )
@@ -144,7 +143,7 @@ class AgentLifecycleAdapter(AgentLifecyclePort):
 
             return AgentOperation(
                 success=True,
-                message=f"Agent deprecated successfully",
+                message="Agent deprecated successfully",
                 agent_path=agent_path,
                 operation_type="deprecate",
             )
@@ -300,7 +299,7 @@ Add examples here.
 
             # Add deprecation info
             deprecation_lines = [
-                f"status: deprecated",
+                "status: deprecated",
                 f"deprecated_date: {datetime.now().isoformat()}",
                 f"deprecation_reason: {reason}",
             ]

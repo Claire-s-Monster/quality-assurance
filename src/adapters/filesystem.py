@@ -7,15 +7,13 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 import threading
-import time
-import json
 import hashlib
 from datetime import datetime
 
 from core.ports import FileSystemPort
-from core.models import Agent, FileMetadata, SecurityViolation
+from core.models import FileMetadata, SecurityViolation
 
 
 class FilesystemAdapter(FileSystemPort):

@@ -11,7 +11,6 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,7 +23,6 @@ from core.models import (
     FixValidationMode,
     OperationResult,
     QualityAssessmentResult,
-    QualityTool,
     QualityAssessmentType,
     ExecutionStatus,
     QualityMetrics,
@@ -529,7 +527,7 @@ class AutomatedFixAdapter(AutomatedFixPort):
                         elif fix_config["tool"] == "mypy":
                             # MyPy doesn't have auto-fix, show what would be checked
                             changes.append(
-                                f"Would run type checking and install missing type stubs"
+                                "Would run type checking and install missing type stubs"
                             )
 
                     except Exception as e:

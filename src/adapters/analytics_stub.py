@@ -2,7 +2,7 @@
 Analytics stub adapter - minimal implementation for agent ecosystem server.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 from datetime import datetime
 from core.models import AnalyticsData
 

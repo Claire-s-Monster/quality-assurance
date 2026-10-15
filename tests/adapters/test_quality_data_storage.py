@@ -8,11 +8,9 @@ export/import capabilities, and data integrity validation.
 import json
 import tempfile
 import threading
-import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import pytest
-from unittest.mock import patch
 
 from core.models import (
     QualityAssessmentResult,
@@ -379,7 +377,7 @@ class TestQualityDataStorageAdapter:
                 metrics=sample_baseline.metrics,
                 tool_versions={},
                 python_version="3.11.0",
-                pixi_environment={f"hash": f"{index}"},
+                pixi_environment={"hash": f"{index}"},
             )
 
             result = adapter.store_baseline(baseline)

@@ -75,7 +75,7 @@ class TestQualityBaselineIntegration:
                 assert baseline.git_commit == "abc123def456"
                 assert baseline.git_branch == "main"
 
-            except Exception as e:
+            except Exception:
                 # Some parts might fail due to mocking limitations, but we should at least
                 # get to the point where git metadata is detected
                 pass

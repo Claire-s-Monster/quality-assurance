@@ -23,7 +23,6 @@ import json
 import logging
 import os
 import secrets
-import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path

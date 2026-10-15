@@ -9,7 +9,6 @@ recommendation generation.
 import json
 import pytest
 from datetime import datetime, UTC
-from unittest.mock import Mock
 
 from core.models import (
     QualityTool,

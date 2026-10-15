@@ -6,12 +6,10 @@ Consolidates 26 quality functions into 14 intelligent functions with 60%+ reduct
 using pixi-first execution and the QualityOrchestrationService business logic layer.
 """
 
-import json
 import sys
 import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from pathlib import Path
 
 from fastmcp import FastMCP
 from pydantic import BaseModel
@@ -23,19 +21,11 @@ from core.container import Container
 from core.models import (
     QualityTool,
     QualityAssessmentType,
-    QualityAssessmentResult,
-    QualityBaseline,
-    QualityComparison,
-    ComprehensiveQualityResult,
     QualitySuiteConfiguration,
-    AutomatedFixResult,
     FixType,
     FixValidationMode,
-    QualityReport,
     ReportFormat,
     ReportTemplate,
-    SystemHealth,
-    ExecutionStatus,
 )
 
 # Initialize FastMCP app
@@ -1571,7 +1561,7 @@ def quality_analyze_trends(
             "recommendations": [
                 f"Quality trend is {score_trend} - continue current practices"
                 if score_trend == "improving"
-                else f"Address declining quality trend",
+                else "Address declining quality trend",
                 "Establish regular quality checkpoints",
                 "Consider automated quality gates for sustained improvement",
             ],

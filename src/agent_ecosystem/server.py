@@ -5,7 +5,6 @@ Provides comprehensive agent management capabilities through Model Context Proto
 Supports discovery, validation, lifecycle management, and analytics for Claude Code agents.
 """
 
-import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
@@ -20,20 +19,9 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from core.service import AgentEcosystemService
 from core.dependency_injection import Container
 from core.models import (
-    Agent,
-    DiscoveryResult,
-    ValidationResult,
     AccessLevel,
     AgentCreationRequest,
     AgentUpdateRequest,
-    OperationResult,
-    AnalyticsData,
-    SecurityViolation,
-    CommandDiscoveryResult,
-    Command,
-    AgentUsageAnalysis,
-    CommandAgentDependency,
-    EcosystemHealthReport,
 )
 
 # Initialize FastMCP app

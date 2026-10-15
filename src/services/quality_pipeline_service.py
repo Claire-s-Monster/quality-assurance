@@ -9,7 +9,6 @@ Orchestrates quality assessment pipelines using pixi task intelligence with:
 - Recommendation generation with pixi-aware insights
 """
 
-import asyncio
 import concurrent.futures
 import time
 from typing import Dict, List, Optional, Any, Tuple

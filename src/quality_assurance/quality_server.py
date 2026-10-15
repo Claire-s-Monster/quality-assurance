@@ -5,7 +5,6 @@ Provides comprehensive code quality assessment capabilities through Model Contex
 Supports linting, type checking, security scanning, complexity analysis, and dead code detection.
 """
 
-import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
@@ -17,16 +16,10 @@ import os
 # Add parent directory to path to access core modules
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from core.quality_service import QualityAssuranceService
 from core.container import Container
 from core.models import (
     QualityTool,
-    QualityAssessmentType,
-    QualityAssessmentResult,
     QualitySuiteConfiguration,
-    ComprehensiveQualityResult,
-    ReportFormat,
-    ReportTemplate,
 )
 
 # Initialize FastMCP app
@@ -105,7 +98,7 @@ def execute_lint_assessment(
 
         return result.dict()
 
-    except ValueError as e:
+    except ValueError:
         return {
             "error": f"Invalid tool: {tool}",
             "valid_tools": [
@@ -154,7 +147,7 @@ def execute_typecheck_assessment(
 
         return result.dict()
 
-    except ValueError as e:
+    except ValueError:
         return {
             "error": f"Invalid tool: {tool}",
             "valid_tools": [QualityTool.MYPY.value],
@@ -196,7 +189,7 @@ def execute_security_scan(
 
         return result.dict()
 
-    except ValueError as e:
+    except ValueError:
         return {
             "error": f"Invalid tool: {tool}",
             "valid_tools": [QualityTool.BANDIT.value],
@@ -238,7 +231,7 @@ def execute_complexity_analysis(
 
         return result.dict()
 
-    except ValueError as e:
+    except ValueError:
         return {
             "error": f"Invalid tool: {tool}",
             "valid_tools": [QualityTool.RADON.value],
@@ -280,7 +273,7 @@ def execute_dead_code_detection(
 
         return result.dict()
 
-    except ValueError as e:
+    except ValueError:
         return {
             "error": f"Invalid tool: {tool}",
             "valid_tools": [QualityTool.VULTURE.value],

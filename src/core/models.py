@@ -5,13 +5,11 @@ These models represent the business domain for quality assessment operations,
 consolidating 26 quality functions into unified pixi-first platform.
 """
 
-from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Optional, Dict, List
 import uuid
 
 from pydantic import BaseModel, Field, model_validator
-from pathlib import Path
 
 
 # =============================================================================

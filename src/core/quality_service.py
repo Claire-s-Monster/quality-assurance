@@ -5,11 +5,9 @@ This service orchestrates quality assessment operations through pixi-mediated
 tool execution, providing comprehensive code quality analysis capabilities.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import List, Optional
 from datetime import datetime
-import logging
 import os
-from pathlib import Path
 
 from .models import (
     QualityTool,
@@ -18,11 +16,7 @@ from .models import (
     QualityMetrics,
     ComprehensiveQualityResult,
     QualitySuiteConfiguration,
-    AutomatedFixResult,
-    QualityReport,
-    ToolValidationResult,
     SystemHealth,
-    OperationResult,
     ExecutionStatus,
 )
 from .ports import (

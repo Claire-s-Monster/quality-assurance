@@ -4,12 +4,8 @@ Validates agent structure, content, dependencies, and security requirements.
 """
 
 import re
-import ast
-import json
-from pathlib import Path
-from typing import Optional, List, Dict, Any, Set
+from typing import Optional, List, Dict, Any
 from datetime import datetime
-import hashlib
 
 from core.ports import AgentValidationPort
 from core.models import (
@@ -18,8 +14,6 @@ from core.models import (
     ValidationIssue,
     IssueType,
     IssueSeverity,
-    AgentFrontmatter,
-    SecurityViolation,
     EcosystemHealth,
 )
 from adapters.filesystem import FilesystemAdapter
