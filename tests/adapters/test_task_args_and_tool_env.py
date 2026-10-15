@@ -206,6 +206,143 @@ class TestBuilderFallback:
         assert result["task_args_fallback_reason"]
 
 
+PYPROJECT = """
+[project]
+name = "demo"
+version = "0.1.0"
+dependencies = ["requests>=2"]
+
+[project.optional-dependencies]
+docs = ["Sphinx_Rtd.Theme>=1"]
+
+[tool.pixi.workspace]
+name = "demo"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.dependencies]
+python = "*"
+
+[tool.pixi.feature.quality.dependencies]
+ruff = "*"
+mypy = "*"
+
+[tool.pixi.feature.quality-extended.dependencies]
+{extended}
+
+[tool.pixi.environments]
+quality = ["quality"]
+quality-extended = ["quality", "quality-extended"]
+quality-full = ["quality", "quality-extended"]
+dev = ["quality", "quality-extended"]
+
+[tool.pixi.tasks]
+security-scan = "bandit -r src/ --severity-level high --exclude tests/"
+"""
+
+
+def _pyproject_adapter(tmp_path, extended='bandit = "*"', extra=""):
+    (tmp_path / "pyproject.toml").write_text(
+        PYPROJECT.format(extended=extended) + extra
+    )
+    adapter = DirectPixiExecutionAdapter(logging=Mock(), working_dir=str(tmp_path))
+    env_info = Mock()
+    env_info.available_tools = {"ruff", "mypy", "bandit"}
+    env_info.tool_versions = {}
+    env_info.environment_health = "optimal"
+    env_info.performance_indicators = {}
+    env_info.recommendations = []
+    env_info.missing_tools = set()
+    adapter.detect_quality_environment = Mock(return_value=env_info)
+    return adapter
+
+
+class TestPyprojectOnlyManifest:
+    BODY = TOOL_ARGS["bandit"]
+
+    def test_bandit_only_in_extended_feature_picks_quality_extended(self, tmp_path):
+        result, mock_run = _run(_pyproject_adapter(tmp_path), "bandit", self.BODY)
+        assert mock_run.call_args[0][0][1:] == [
+            "run",
+            "--environment",
+            "quality-extended",
+            "bandit",
+            "-r",
+            "src/",
+            "--severity-level",
+            "high",
+            "--exclude",
+            "tests/",
+            "-f",
+            "json",
+        ]
+        assert result["tool_environment_source"] == "tool_dependency"
+
+    def test_no_environment_has_bandit_is_a_clear_error(self, tmp_path):
+        adapter = _pyproject_adapter(tmp_path, extended='vulture = "*"')
+        result, mock_run = _run(adapter, "bandit", self.BODY)
+        mock_run.assert_not_called()
+        assert "bandit is not installed in any pixi environment" in result["error"]
+
+    def test_project_dependencies_count_for_default_feature(self, tmp_path):
+        adapter = _pyproject_adapter(tmp_path, extended='vulture = "*"', extra="")
+        text = (
+            (tmp_path / "pyproject.toml")
+            .read_text()
+            .replace(
+                'dependencies = ["requests>=2"]',
+                'dependencies = ["requests>=2", "Bandit[toml]>=1.7 ; python_version>\'3\'"]',
+            )
+        )
+        (tmp_path / "pyproject.toml").write_text(text)
+        assert adapter.environments_providing_tool("bandit") == [
+            "default",
+            "quality",
+            "quality-extended",
+            "quality-full",
+            "dev",
+        ]
+
+    def test_optional_dependencies_count_and_names_normalize(self, tmp_path):
+        adapter = _pyproject_adapter(tmp_path, extended='vulture = "*"')
+        assert "quality" in adapter.environments_providing_tool("sphinx-rtd-theme")
+
+    def test_no_manifest_at_all_is_undeterminable(self, tmp_path):
+        adapter = DirectPixiExecutionAdapter(logging=Mock(), working_dir=str(tmp_path))
+        assert adapter.environments_providing_tool("bandit") is None
+
+
+class TestMypyJsonCounts:
+    LINES = (
+        '{"file": "src/a.py", "line": 3, "column": 4, "message": "bad type", '
+        '"hint": null, "code": "assignment", "severity": "error"}\n'
+        '{"file": "src/a.py", "line": 3, "column": 4, "message": "see docs", '
+        '"hint": null, "code": "assignment", "severity": "note"}\n'
+        '{"file": "src/b.py", "line": 9, "column": 1, "message": "other", '
+        '"hint": null, "code": "arg-type", "severity": "error"}\n'
+    )
+
+    def test_exit_1_json_lines_keep_counts(self, tmp_path):
+        body = TOOL_ARGS["mypy"]
+        adapter = _adapter_for(tmp_path, "mypy", body)
+        proc = Mock(returncode=1, stdout=self.LINES, stderr="")
+        with patch("adapters.direct_pixi_execution.subprocess.run", return_value=proc):
+            result = adapter.run_quality_task(
+                task_name="typecheck",
+                quality_tool="mypy",
+                target_paths=["src/"],
+                quality_config={"output_format": "json"},
+            )
+        assert result["success"] is False
+        assert result["findings_detected"] is True
+        assert result["parsed_output"]["error_count"] == 2
+
+    def test_text_output_still_counted(self, tmp_path):
+        adapter = _project(tmp_path)
+        parsed = adapter._parse_mypy_output("src/a.py:3: error: bad\nFound 1 error\n")
+        assert parsed["error_count"] == 1
+
+
 class TestEnvironmentChoice:
     def test_caller_environment_overrides_body(self, tmp_path):
         body = TOOL_ARGS["ruff"]

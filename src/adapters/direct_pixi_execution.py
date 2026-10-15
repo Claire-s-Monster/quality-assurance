@@ -12,6 +12,7 @@ Enhanced with quality intelligence for quality-focused task orchestration includ
 
 import json
 import os
+import re
 import shlex
 import shutil
 import statistics
@@ -648,38 +649,81 @@ class DirectPixiExecutionAdapter:
     ) -> Optional[List[str]]:
         """Environments whose features declare `tool` as a conda or pypi dependency.
 
-        None means "cannot tell" (no pixi.toml, or an empty manifest): the
-        caller must not conclude the tool is missing. An empty list means the
-        manifest was read and no environment declares the tool.
+        Reads the same manifest as `_load_pixi_config` (pixi.toml, else
+        pyproject.toml's [tool.pixi]). For pyproject manifests, [project]
+        dependencies and optional-dependencies count as pypi dependencies of
+        the default feature.
+
+        None means "cannot tell" (no readable manifest): the caller must not
+        conclude the tool is missing. An empty list means the manifest was
+        read and no environment declares the tool.
         """
         path = working_dir or self.working_dir
-        if not (Path(path) / "pixi.toml").exists():
+        try:
+            config = self._load_pixi_config(path)
+        except Exception:
             return None
-        config = self._load_pixi_config(path)
         if not config:
             return None
+        project_deps: Set[str] = set()
+        if not (Path(path) / "pixi.toml").exists():
+            project_deps = self._pyproject_dependency_names(path)
         names = list((config.get("environments", {}) or {}).keys())
         if "default" not in names:
             names.insert(0, "default")
-        return [n for n in names if self._environment_declares_tool(config, n, tool)]
+        return [
+            n
+            for n in names
+            if self._environment_declares_tool(config, n, tool, project_deps)
+        ]
+
+    @staticmethod
+    def _normalize_package_name(name: str) -> str:
+        return re.sub(r"[-_.]+", "-", name).lower()
+
+    def _pyproject_dependency_names(self, path: str) -> Set[str]:
+        """Normalized names from pyproject [project] dependencies and
+        optional-dependencies (PEP 508 strings; extras/markers/versions dropped)."""
+        import toml
+
+        try:
+            with open(Path(path) / "pyproject.toml", "r") as f:
+                project = toml.load(f).get("project", {}) or {}
+        except Exception:
+            return set()
+        specs = list(project.get("dependencies", []) or [])
+        for group in (project.get("optional-dependencies", {}) or {}).values():
+            specs.extend(group or [])
+        names: Set[str] = set()
+        for spec in specs:
+            match = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)", str(spec))
+            if match:
+                names.add(self._normalize_package_name(match.group(1)))
+        return names
 
     def _environment_declares_tool(
-        self, config: Dict[str, Any], environment: str, tool: str
+        self,
+        config: Dict[str, Any],
+        environment: str,
+        tool: str,
+        project_deps: Optional[Set[str]] = None,
     ) -> bool:
         entry = (config.get("environments", {}) or {}).get(environment)
         no_default = isinstance(entry, dict) and bool(entry.get("no-default-feature"))
+        wanted = self._normalize_package_name(tool)
+        if not no_default and wanted in (project_deps or set()):
+            return True
         features = config.get("feature", {}) or {}
         tables = [] if no_default else [config]
         for name in self._resolve_environment_features(config, environment) or []:
             tables.append(features.get(name, {}) or {})
 
-        wanted = tool.lower().replace("_", "-")
         for table in tables:
             scopes = [table, *((table.get("target", {}) or {}).values())]
             for scope in scopes:
                 for key in ("dependencies", "pypi-dependencies"):
                     declared = (scope.get(key, {}) or {}).keys()
-                    if wanted in (d.lower().replace("_", "-") for d in declared):
+                    if wanted in (self._normalize_package_name(d) for d in declared):
                         return True
         return False
 
@@ -1739,7 +1783,18 @@ class DirectPixiExecutionAdapter:
     def _parse_mypy_output(self, output: str) -> Dict[str, Any]:
         """Parse MyPy output."""
         lines = output.strip().split("\n")
-        errors = [line for line in lines if ": error:" in line]
+        errors = [
+            line for line in lines if ": error:" in line and not line.startswith("{")
+        ]
+        for line in lines:
+            if not line.startswith("{"):
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(entry, dict) and entry.get("severity") == "error":
+                errors.append(line)
         return {"tool": "mypy", "type_errors": errors, "error_count": len(errors)}
 
     def _parse_bandit_output(self, output: str) -> Dict[str, Any]:
