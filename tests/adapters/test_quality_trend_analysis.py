@@ -181,7 +181,7 @@ class TestQualityTrendAnalysisAdapter:
         """Test comparison against baseline."""
         # Create baseline
         baseline_id = "baseline-2024-01-01"
-        baseline = adapter.establish_baseline(
+        adapter.establish_baseline(
             baseline_id=baseline_id,
             assessment_results=sample_assessment_results,
             project_metadata=sample_project_metadata,

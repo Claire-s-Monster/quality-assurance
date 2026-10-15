@@ -51,8 +51,10 @@ class EnvironmentAdapter(EnvironmentPort):
     def check_pixi_available(self) -> bool:
         """Check if pixi executable is available."""
         try:
-            result = subprocess.run(
-                ["pixi", "--version"], capture_output=True, timeout=10
+            result = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["pixi", "--version"],  # noqa: S607 -- pixi resolved from PATH by design
+                capture_output=True,
+                timeout=10,
             )
             return result.returncode == 0
         except Exception:

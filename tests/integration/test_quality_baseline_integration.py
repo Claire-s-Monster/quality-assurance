@@ -82,7 +82,7 @@ class TestQualityBaselineIntegration:
 
     def test_baseline_storage_integration(self, container):
         """Test that baselines are properly stored using the data storage adapter."""
-        orchestration_service = container.orchestration_service
+        _orchestration_service = container.orchestration_service
         data_storage = container.data_storage
 
         # Create a mock baseline

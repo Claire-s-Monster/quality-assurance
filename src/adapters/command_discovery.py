@@ -148,12 +148,13 @@ class CommandDiscoveryAdapter(CommandDiscoveryPort):
                                 or command.command_type.value in command_types
                             ):
                                 commands.append(command)
-                    except Exception:
-                        # Log error but continue discovery
+                    except Exception:  # noqa: S112 -- one unparsable command file must not abort discovery
                         continue
 
-        except PermissionError:
-            raise SecurityViolation(f"Permission denied scanning directory: {base_dir}")
+        except PermissionError as err:
+            raise SecurityViolation(
+                f"Permission denied scanning directory: {base_dir}"
+            ) from err
 
         return commands
 
@@ -261,7 +262,7 @@ class CommandDiscoveryAdapter(CommandDiscoveryPort):
                     frontmatter = yaml.safe_load(frontmatter_text)
                     if isinstance(frontmatter, dict):
                         metadata.update(frontmatter)
-            except:
+            except:  # noqa: S110, E722 -- malformed frontmatter is optional metadata; ignore and use defaults
                 pass
 
         # Look for common metadata patterns in content
@@ -391,7 +392,7 @@ class CommandDiscoveryAdapter(CommandDiscoveryPort):
                     if query_lower in content.lower():
                         matching_commands.append(command)
                         continue
-                except:
+                except:  # noqa: S110, E722 -- unreadable command files are skipped in content search
                     pass
 
         return matching_commands
@@ -417,7 +418,9 @@ class CommandDiscoveryAdapter(CommandDiscoveryPort):
         id_string = f"{source}:{relative_path}"
 
         # Create short hash for uniqueness
-        hash_digest = hashlib.md5(id_string.encode()).hexdigest()[:8]
+        hash_digest = hashlib.md5(
+            id_string.encode(), usedforsecurity=False
+        ).hexdigest()[:8]
 
         return f"{relative_path}_{hash_digest}"
 

@@ -639,7 +639,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
                 index = json.load(f)
 
             # Remove from all projects
-            for project_name, baseline_ids in index.items():
+            for baseline_ids in index.values():
                 if baseline_id in baseline_ids:
                     baseline_ids.remove(baseline_id)
 
@@ -953,7 +953,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
                 patterns["consistent_degradation"] = True
 
         # Identify quality milestones (scores > 9.0)
-        for i, baseline in enumerate(baselines):
+        for baseline in baselines:
             if baseline.metrics.overall_score > 9.0:
                 patterns["quality_milestones"].append(
                     {
@@ -964,7 +964,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
                 )
 
         # Identify problematic periods (scores < 6.0)
-        for i, baseline in enumerate(baselines):
+        for baseline in baselines:
             if baseline.metrics.overall_score < 6.0:
                 patterns["problematic_periods"].append(
                     {

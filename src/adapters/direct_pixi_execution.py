@@ -189,7 +189,7 @@ class DirectPixiExecutionAdapter:
             )
 
             # Execute command
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603 -- argv list, no shell; the MCP server runs pixi tasks by design
                 command,
                 capture_output=True,
                 text=True,
@@ -439,7 +439,7 @@ class DirectPixiExecutionAdapter:
 
             # Try to get pixi info
             try:
-                result = subprocess.run(
+                result = subprocess.run(  # noqa: S603 -- fixed argv, no shell
                     [self._pixi_bin, "info"],
                     capture_output=True,
                     text=True,
@@ -1076,8 +1076,6 @@ class DirectPixiExecutionAdapter:
 
     def _calculate_health_score(self, env_info: QualityEnvironmentInfo) -> float:
         """Calculate overall environment health score (0-100)."""
-        base_score = 0
-
         # Tool availability (40% of score)
         core_tools = {"ruff", "mypy", "bandit", "pytest"}
         available_core = core_tools.intersection(env_info.available_tools)
@@ -1215,7 +1213,7 @@ class DirectPixiExecutionAdapter:
 
             for cmd in version_commands:
                 try:
-                    result = subprocess.run(
+                    result = subprocess.run(  # noqa: S603 -- argv from hardcoded version-probe commands, no shell
                         [self._pixi_bin, "run"] + cmd,
                         capture_output=True,
                         text=True,
@@ -1224,7 +1222,7 @@ class DirectPixiExecutionAdapter:
                     )
                     if result.returncode == 0:
                         return result.stdout.strip().split("\n")[0]
-                except:
+                except:  # noqa: S112, E722 -- try the next version-probe command if this one fails
                     continue
 
             return None

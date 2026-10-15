@@ -224,8 +224,11 @@ class PixiExecutionAdapter(PixiExecutorPort):
     def check_pixi_available(self) -> bool:
         """Check if pixi executable is available."""
         try:
-            result = subprocess.run(
-                ["pixi", "--version"], capture_output=True, timeout=10, text=True
+            result = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["pixi", "--version"],  # noqa: S607 -- pixi resolved from PATH by design
+                capture_output=True,
+                timeout=10,
+                text=True,
             )
             return result.returncode == 0
         except (
@@ -252,7 +255,7 @@ class PixiExecutionAdapter(PixiExecutorPort):
                 full_env.update(env)
 
             # Execute command
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603 -- argv list, no shell; the MCP server runs tools by design
                 command,
                 capture_output=True,
                 timeout=timeout_seconds,

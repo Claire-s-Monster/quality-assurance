@@ -302,8 +302,8 @@ class GitIntegrationAdapter:
     def _is_git_available(self) -> bool:
         """Check if git command is available."""
         try:
-            result = subprocess.run(
-                ["git", "--version"],
+            result = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["git", "--version"],  # noqa: S607 -- git resolved from PATH by design
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -316,8 +316,8 @@ class GitIntegrationAdapter:
     def _is_git_repository(self) -> bool:
         """Check if current directory is a git repository."""
         try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--git-dir"],
+            result = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["git", "rev-parse", "--git-dir"],  # noqa: S607 -- git resolved from PATH by design
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -330,7 +330,7 @@ class GitIntegrationAdapter:
     def _run_git_command(self, args: list, timeout: int = 10) -> Optional[str]:
         """Run git command and return output."""
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603 -- argv list with fixed "git" binary, no shell
                 ["git"] + args,
                 capture_output=True,
                 text=True,

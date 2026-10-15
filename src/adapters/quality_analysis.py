@@ -749,7 +749,6 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
 
         # Parse radon's cyclomatic complexity output
         lines = output.split("\n")
-        current_file = None
 
         for line in lines:
             line = line.strip()
@@ -758,13 +757,12 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
 
             # File header pattern
             if line.endswith(".py"):
-                current_file = line
+                continue
             # Function complexity pattern: F line:col function_name - A (score)
             elif re.match(r"^[A-F]\s+\d+:\d+", line):
                 parts = line.split()
                 if len(parts) >= 4:
                     grade = parts[0]
-                    location = parts[1]
                     func_name = parts[2]
                     score_part = parts[-1]
 

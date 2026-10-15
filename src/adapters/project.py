@@ -56,10 +56,8 @@ class PixiProjectAdapter(PixiProjectPort):
             pyproject_toml_path = Path(path) / "pyproject.toml"
 
             config = {}
-            config_file = ""
 
             if pixi_toml_path.exists():
-                config_file = str(pixi_toml_path)
                 try:
                     with open(pixi_toml_path, "r") as f:
                         config = toml.load(f)
@@ -69,7 +67,6 @@ class PixiProjectAdapter(PixiProjectPort):
                     )
                     return PixiProjectInfo.create_empty(path)
             elif pyproject_toml_path.exists():
-                config_file = str(pyproject_toml_path)
                 try:
                     with open(pyproject_toml_path, "r") as f:
                         full_config = toml.load(f)
@@ -210,7 +207,7 @@ class PixiProjectAdapter(PixiProjectPort):
             command.append(package)
 
             # Execute command
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603 -- argv list of pixi args, no shell
                 command, capture_output=True, text=True, cwd=working_dir, timeout=120
             )
 
@@ -267,7 +264,7 @@ class PixiProjectAdapter(PixiProjectPort):
             command.append(package)
 
             # Execute command
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603 -- argv list of pixi args, no shell
                 command, capture_output=True, text=True, cwd=working_dir, timeout=60
             )
 
@@ -376,7 +373,9 @@ class PixiProjectAdapter(PixiProjectPort):
             command.append(path)
 
             # Execute command
-            result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(  # noqa: S603 -- argv list of pixi args, no shell
+                command, capture_output=True, text=True, timeout=60
+            )
 
             execution_time = time.time() - start_time
 
@@ -428,7 +427,7 @@ class PixiProjectAdapter(PixiProjectPort):
                     python_executable = str(python_path)
 
                     # Get Python version
-                    result = subprocess.run(
+                    result = subprocess.run(  # noqa: S603 -- argv is the env's own python, fixed flag
                         [str(python_path), "--version"],
                         capture_output=True,
                         text=True,
@@ -436,7 +435,7 @@ class PixiProjectAdapter(PixiProjectPort):
                     )
                     if result.returncode == 0:
                         python_version = result.stdout.strip()
-            except Exception:
+            except Exception:  # noqa: S110 -- python probe is best-effort; fall back to defaults
                 pass
 
             # Calculate environment size
@@ -448,7 +447,7 @@ class PixiProjectAdapter(PixiProjectPort):
                     if f.is_file()
                 )
                 environment_size_mb = total_size / (1024 * 1024)
-            except Exception:
+            except Exception:  # noqa: S110 -- size estimate is best-effort; default 0.0 is reported
                 pass
 
             # Count packages (simplified)
@@ -457,7 +456,7 @@ class PixiProjectAdapter(PixiProjectPort):
                 conda_meta_path = Path(environment_path) / "conda-meta"
                 if conda_meta_path.exists():
                     package_count = len(list(conda_meta_path.glob("*.json")))
-            except Exception:
+            except Exception:  # noqa: S110 -- package count is best-effort; default 0 is reported
                 pass
 
             return PixiEnvironmentInfo(
@@ -479,8 +478,12 @@ class PixiProjectAdapter(PixiProjectPort):
         """Get the path to the pixi environment."""
         try:
             # Try to get environment path from pixi info
-            result = subprocess.run(
-                ["pixi", "info"], capture_output=True, text=True, cwd=path, timeout=10
+            result = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["pixi", "info"],  # noqa: S607 -- pixi resolved from PATH by design
+                capture_output=True,
+                text=True,
+                cwd=path,
+                timeout=10,
             )
 
             if result.returncode == 0:
@@ -492,13 +495,12 @@ class PixiProjectAdapter(PixiProjectPort):
 
             # Fallback: construct standard environment path
             # This is typically in .pixi/envs/default
-            project_name = Path(path).name
             env_path = Path(path) / ".pixi" / "envs" / "default"
 
             if env_path.exists():
                 return str(env_path)
 
-        except Exception:
+        except Exception:  # noqa: S110 -- env path lookup is best-effort; None signals not found
             pass
 
         return None
@@ -536,7 +538,7 @@ class PixiProjectAdapter(PixiProjectPort):
             if env_path:
                 python_path = Path(env_path) / "bin" / "python"
                 if python_path.exists():
-                    result = subprocess.run(
+                    result = subprocess.run(  # noqa: S603 -- argv is the env's own python, fixed flag
                         [str(python_path), "--version"],
                         capture_output=True,
                         text=True,
@@ -544,7 +546,7 @@ class PixiProjectAdapter(PixiProjectPort):
                     )
                     if result.returncode == 0:
                         return result.stdout.strip()
-        except Exception:
+        except Exception:  # noqa: S110 -- version lookup is best-effort; None signals unknown
             pass
 
         return None
@@ -552,8 +554,10 @@ class PixiProjectAdapter(PixiProjectPort):
     def _check_pixi_executable(self) -> bool:
         """Check if pixi executable is available."""
         try:
-            result = subprocess.run(
-                ["pixi", "--version"], capture_output=True, timeout=10
+            result = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["pixi", "--version"],  # noqa: S607 -- pixi resolved from PATH by design
+                capture_output=True,
+                timeout=10,
             )
             return result.returncode == 0
         except Exception:

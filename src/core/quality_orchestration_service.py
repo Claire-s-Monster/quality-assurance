@@ -564,7 +564,7 @@ class QualityOrchestrationService:
                     "project_name": project_name,
                 },
             )
-            raise RuntimeError(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def compare_against_baseline(
         self,
@@ -617,7 +617,7 @@ class QualityOrchestrationService:
                 error_msg,
                 {"operation": "compare_against_baseline", "baseline_id": baseline_id},
             )
-            raise RuntimeError(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def apply_automated_fixes(
         self,
@@ -683,7 +683,7 @@ class QualityOrchestrationService:
                     "fix_types": [ft.value for ft in fix_types],
                 },
             )
-            raise RuntimeError(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def generate_quality_report(
         self,
@@ -765,7 +765,7 @@ class QualityOrchestrationService:
                     "template": template.value,
                 },
             )
-            raise RuntimeError(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def get_quality_recommendations(
         self,
@@ -867,7 +867,7 @@ class QualityOrchestrationService:
             self.logging.log_error(
                 error_msg, {"operation": "get_quality_recommendations"}
             )
-            raise RuntimeError(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def health_check(self) -> SystemHealth:
         """

@@ -106,7 +106,6 @@ class AutomatedFixAdapter(AutomatedFixPort):
             AutomatedFixResult with fix details, validation results, and rollback info
         """
         start_time = datetime.now(UTC).isoformat()
-        fix_session_id = f"fix-{int(time.time())}"
 
         try:
             # Initialize result structure
@@ -395,7 +394,7 @@ class AutomatedFixAdapter(AutomatedFixPort):
             return str(backup_path)
 
         except Exception as e:
-            raise RuntimeError(f"Failed to create backup: {str(e)}")
+            raise RuntimeError(f"Failed to create backup: {str(e)}") from e
 
     def rollback_fixes(self, backup_path: str) -> OperationResult:
         """
@@ -578,7 +577,9 @@ class AutomatedFixAdapter(AutomatedFixPort):
                     )
 
             except Exception as e:
-                raise RuntimeError(f"Failed to apply {fix_type.value} fixes: {str(e)}")
+                raise RuntimeError(
+                    f"Failed to apply {fix_type.value} fixes: {str(e)}"
+                ) from e
 
         # Calculate modified content hashes and changes
         modified_hashes = {}
@@ -653,8 +654,8 @@ class AutomatedFixAdapter(AutomatedFixPort):
                 }
 
             # Check for uncommitted changes
-            result = subprocess.run(
-                ["git", "status", "--porcelain"],
+            result = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["git", "status", "--porcelain"],  # noqa: S607 -- git resolved from PATH by design
                 cwd=self.working_dir,
                 capture_output=True,
                 text=True,
@@ -1041,11 +1042,11 @@ class AutomatedFixAdapter(AutomatedFixPort):
                         backup_time = backup_path.stat().st_ctime
                         if backup_time < cutoff_time:
                             shutil.rmtree(backup_path)
-                    except Exception:
-                        continue  # Skip if we can't clean up this backup
+                    except Exception:  # noqa: S112 -- best-effort cleanup; skip backups that cannot be removed
+                        continue
 
-        except Exception:
-            pass  # Don't fail the operation if cleanup fails
+        except Exception:  # noqa: S110 -- best-effort cleanup must never fail the calling operation
+            pass
 
     def _verify_backup_integrity(
         self, backup_dir: Path, metadata: Dict[str, Any]

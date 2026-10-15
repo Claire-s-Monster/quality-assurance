@@ -1097,7 +1097,7 @@ def quality_detect_quality_patterns(
                         project_name="current_project", limit=10
                     )
                 )
-            except Exception:
+            except Exception:  # noqa: S110 -- history lookup is optional; the empty-results error below covers failure
                 pass
 
         if not converted_results:
@@ -1193,7 +1193,7 @@ def quality_prioritize_issues(
                         project_name="current_project", limit=10
                     )
                 )
-            except Exception:
+            except Exception:  # noqa: S110 -- history lookup is optional; the empty-results error below covers failure
                 pass
 
         if not converted_results:
@@ -2061,7 +2061,9 @@ def quality_execute_pixi_aware_assessment(
         if tools_failed:
             failure_details = [
                 _describe_pixi_aware_failure(tool_name, result)
-                for tool_name, result, outcome in zip(tools, results, outcomes)
+                for tool_name, result, outcome in zip(
+                    tools, results, outcomes, strict=False
+                )
                 if outcome == "failed"
             ]
             recommendations.insert(

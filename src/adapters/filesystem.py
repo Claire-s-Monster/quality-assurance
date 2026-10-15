@@ -80,12 +80,16 @@ class FilesystemAdapter(FileSystemPort):
                     )
 
                 return content
-            except FileNotFoundError:
-                raise FileNotFoundError(f"Agent file not found: {file_path}")
-            except PermissionError:
-                raise SecurityViolation(f"Permission denied reading file: {file_path}")
-            except UnicodeDecodeError:
-                raise SecurityViolation(f"Invalid UTF-8 encoding in file: {file_path}")
+            except FileNotFoundError as err:
+                raise FileNotFoundError(f"Agent file not found: {file_path}") from err
+            except PermissionError as err:
+                raise SecurityViolation(
+                    f"Permission denied reading file: {file_path}"
+                ) from err
+            except UnicodeDecodeError as err:
+                raise SecurityViolation(
+                    f"Invalid UTF-8 encoding in file: {file_path}"
+                ) from err
 
     def file_exists(self, file_path: str) -> bool:
         """Check if file exists with security validation."""
@@ -109,8 +113,10 @@ class FilesystemAdapter(FileSystemPort):
         # Ensure content is valid UTF-8
         try:
             content.encode("utf-8")
-        except UnicodeEncodeError:
-            raise SecurityViolation("Content contains invalid UTF-8 characters")
+        except UnicodeEncodeError as err:
+            raise SecurityViolation(
+                "Content contains invalid UTF-8 characters"
+            ) from err
 
         with self._get_file_lock(file_path):
             file_path_obj = Path(file_path)
@@ -149,7 +155,7 @@ class FilesystemAdapter(FileSystemPort):
                 if backup_path and Path(backup_path).exists():
                     shutil.move(backup_path, file_path)
 
-                raise SecurityViolation(f"Failed to write file {file_path}: {e}")
+                raise SecurityViolation(f"Failed to write file {file_path}: {e}") from e
 
     def delete_file(self, file_path: str, create_backup: bool = True) -> bool:
         """Delete agent file with optional backup."""
@@ -170,8 +176,10 @@ class FilesystemAdapter(FileSystemPort):
             try:
                 file_path_obj.unlink()
                 return True
-            except PermissionError:
-                raise SecurityViolation(f"Permission denied deleting file: {file_path}")
+            except PermissionError as err:
+                raise SecurityViolation(
+                    f"Permission denied deleting file: {file_path}"
+                ) from err
 
     def move_file(self, source_path: str, destination_path: str) -> bool:
         """Move agent file with validation."""
@@ -205,10 +213,10 @@ class FilesystemAdapter(FileSystemPort):
                     dest_obj.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(source_path, destination_path)
                     return True
-                except PermissionError:
+                except PermissionError as err:
                     raise SecurityViolation(
                         f"Permission denied moving file from {source_path} to {destination_path}"
-                    )
+                    ) from err
 
     def list_directory(
         self, dir_path: str, pattern: Optional[str] = None
@@ -257,8 +265,10 @@ class FilesystemAdapter(FileSystemPort):
                         )
                     )
 
-        except PermissionError:
-            raise SecurityViolation(f"Permission denied listing directory: {dir_path}")
+        except PermissionError as err:
+            raise SecurityViolation(
+                f"Permission denied listing directory: {dir_path}"
+            ) from err
 
         return files
 
@@ -269,8 +279,10 @@ class FilesystemAdapter(FileSystemPort):
         try:
             Path(dir_path).mkdir(parents=True, exist_ok=True)
             return True
-        except PermissionError:
-            raise SecurityViolation(f"Permission denied creating directory: {dir_path}")
+        except PermissionError as err:
+            raise SecurityViolation(
+                f"Permission denied creating directory: {dir_path}"
+            ) from err
 
     def get_file_metadata(self, file_path: str) -> Optional[FileMetadata]:
         """Get detailed file metadata."""
@@ -291,10 +303,10 @@ class FilesystemAdapter(FileSystemPort):
                 is_directory=file_path_obj.is_dir(),
                 permissions=oct(stat.st_mode)[-3:],
             )
-        except PermissionError:
+        except PermissionError as err:
             raise SecurityViolation(
                 f"Permission denied accessing file metadata: {file_path}"
-            )
+            ) from err
 
     def calculate_file_hash(self, file_path: str) -> str:
         """Calculate SHA-256 hash of file content."""
@@ -307,12 +319,12 @@ class FilesystemAdapter(FileSystemPort):
                     for chunk in iter(lambda: f.read(4096), b""):
                         hasher.update(chunk)
                 return hasher.hexdigest()
-            except FileNotFoundError:
-                raise FileNotFoundError(f"File not found: {file_path}")
-            except PermissionError:
+            except FileNotFoundError as err:
+                raise FileNotFoundError(f"File not found: {file_path}") from err
+            except PermissionError as err:
                 raise SecurityViolation(
                     f"Permission denied reading file for hash: {file_path}"
-                )
+                ) from err
 
     def ensure_safe_operation(self, operation_type: str, target_path: str) -> bool:
         """Ensure operation is safe to perform."""

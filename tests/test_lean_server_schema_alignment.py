@@ -283,9 +283,6 @@ class TestAdapterAlignment:
             if not hasattr(tool_obj, "fn"):
                 continue
 
-            server_sig = inspect.signature(tool_obj.fn)
-            server_params = {n for n in server_sig.parameters.keys() if n != "self"}
-
             # Get adapter method params
             adapter_method = getattr(QualityToolExecutionAdapter, adapter_method_name)
             adapter_sig = inspect.signature(adapter_method)

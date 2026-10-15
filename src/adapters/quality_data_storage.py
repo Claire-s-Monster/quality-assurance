@@ -801,7 +801,7 @@ class QualityDataStorageAdapter(QualityDataStoragePort):
                 index = json.load(f)
 
             # Remove from all projects
-            for project_name, baseline_ids in index.items():
+            for baseline_ids in index.values():
                 if baseline_id in baseline_ids:
                     baseline_ids.remove(baseline_id)
 
@@ -887,5 +887,5 @@ class QualityDataStorageAdapter(QualityDataStoragePort):
             with self._locks_lock:
                 self._file_locks.clear()
 
-        except Exception:
+        except Exception:  # noqa: S110 -- shutdown cleanup is best-effort and must not raise
             pass

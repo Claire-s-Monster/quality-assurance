@@ -103,12 +103,13 @@ class AgentDiscoveryAdapter(AgentDiscoveryPort):
                             or agent.classification.category in categories
                         ):
                             agents.append(agent)
-                except Exception:
-                    # Log error but continue discovery
+                except Exception:  # noqa: S112 -- one unparsable agent file must not abort discovery
                     continue
 
-        except PermissionError:
-            raise SecurityViolation(f"Permission denied scanning directory: {base_dir}")
+        except PermissionError as err:
+            raise SecurityViolation(
+                f"Permission denied scanning directory: {base_dir}"
+            ) from err
 
         return agents
 
@@ -317,7 +318,9 @@ class AgentDiscoveryAdapter(AgentDiscoveryPort):
         id_string = f"{source}:{relative_path}"
 
         # Create short hash for uniqueness
-        hash_digest = hashlib.md5(id_string.encode()).hexdigest()[:8]
+        hash_digest = hashlib.md5(
+            id_string.encode(), usedforsecurity=False
+        ).hexdigest()[:8]
 
         return f"{relative_path}_{hash_digest}"
 

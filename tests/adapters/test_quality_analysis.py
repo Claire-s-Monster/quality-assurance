@@ -348,7 +348,7 @@ src/utils.py:23: warning: Unused 'type: ignore' comment"""
 
         # Create assessment results
         results = []
-        for i, violations in enumerate([violations1, violations2]):
+        for violations in [violations1, violations2]:
             metrics = QualityMetrics(
                 overall_score=7.0,
                 total_violations=len(violations),

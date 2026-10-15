@@ -87,7 +87,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "discover_agents"})
-            raise SecurityViolation(f"Agent discovery failed: {e}")
+            raise SecurityViolation(f"Agent discovery failed: {e}") from e
 
     def search_agents(self, query: str, scope: str = "both") -> List[Agent]:
         """Search agents by query with caching."""
@@ -110,7 +110,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "search_agents"})
-            raise SecurityViolation(f"Agent search failed: {e}")
+            raise SecurityViolation(f"Agent search failed: {e}") from e
 
     def get_agent_by_id(self, agent_id: str) -> Optional[Agent]:
         """Get specific agent by ID with caching."""
@@ -134,7 +134,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "get_agent_by_id"})
-            raise SecurityViolation(f"Agent retrieval failed: {e}")
+            raise SecurityViolation(f"Agent retrieval failed: {e}") from e
 
     # Agent Validation Operations
 
@@ -169,7 +169,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "validate_agent"})
-            raise SecurityViolation(f"Agent validation failed: {e}")
+            raise SecurityViolation(f"Agent validation failed: {e}") from e
 
     def validate_agents_bulk(
         self, agent_paths: List[str], validation_level: str = "basic"
@@ -214,7 +214,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "validate_agents_bulk"})
-            raise SecurityViolation(f"Bulk validation failed: {e}")
+            raise SecurityViolation(f"Bulk validation failed: {e}") from e
 
     # Agent Lifecycle Operations
 
@@ -251,7 +251,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "create_agent"})
-            raise SecurityViolation(f"Agent creation failed: {e}")
+            raise SecurityViolation(f"Agent creation failed: {e}") from e
 
     def update_agent(
         self, agent_id: str, request: AgentUpdateRequest
@@ -293,7 +293,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "update_agent"})
-            raise SecurityViolation(f"Agent update failed: {e}")
+            raise SecurityViolation(f"Agent update failed: {e}") from e
 
     def delete_agent(self, agent_id: str, force: bool = False) -> OperationResult:
         """Delete agent with safety checks."""
@@ -345,7 +345,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "delete_agent"})
-            raise SecurityViolation(f"Agent deletion failed: {e}")
+            raise SecurityViolation(f"Agent deletion failed: {e}") from e
 
     def deprecate_agent(self, agent_id: str, reason: str) -> OperationResult:
         """Mark agent as deprecated with migration guidance."""
@@ -383,7 +383,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "deprecate_agent"})
-            raise SecurityViolation(f"Agent deprecation failed: {e}")
+            raise SecurityViolation(f"Agent deprecation failed: {e}") from e
 
     # Analytics and Reporting
 
@@ -417,7 +417,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "get_ecosystem_analytics"})
-            raise SecurityViolation(f"Analytics generation failed: {e}")
+            raise SecurityViolation(f"Analytics generation failed: {e}") from e
 
     # Helper Methods
 
@@ -468,7 +468,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "clear_cache"})
-            raise SecurityViolation(f"Cache clearing failed: {e}")
+            raise SecurityViolation(f"Cache clearing failed: {e}") from e
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
@@ -478,7 +478,7 @@ class AgentEcosystemService:
 
         except Exception as e:
             self.logger.log_error(str(e), {"operation": "get_cache_stats"})
-            raise SecurityViolation(f"Cache stats retrieval failed: {e}")
+            raise SecurityViolation(f"Cache stats retrieval failed: {e}") from e
 
     # Health and Status
 

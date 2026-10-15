@@ -501,7 +501,7 @@ def classify_agent_access_level(agent_path: str) -> Dict[str, Any]:
     try:
         # Read and analyze agent
         filesystem = container.get("filesystem")
-        content = filesystem.read_file(agent_path)
+        filesystem.read_file(agent_path)
 
         # Simple classification based on filename and content patterns
         filename = agent_path.split("/")[-1].lower()
