@@ -57,38 +57,38 @@ def execute_claudecode_function(
     function_name: str,
     args: list[str] = [],
     working_dir: str | None = None,
-    timeout_seconds: int = 30
+    timeout_seconds: int = 30,
 ) -> dict[str, Any]:
     """
     Execute a claudecode_* function with validation and security checks.
-    
+
     Use this as a DROP-IN REPLACEMENT for Bash("claudecode_...") calls:
-    
+
     Migration Pattern:
     - OLD: Bash("claudecode_system_info load")
     - NEW: execute_claudecode_function("claudecode_system_info", ["load"])
-    
+
     Common Usage Examples:
     - execute_claudecode_function("claudecode_system_info", ["load"])
-    - execute_claudecode_function("claudecode_git_status") 
+    - execute_claudecode_function("claudecode_git_status")
     - execute_claudecode_function("claudecode_quality_check", ["--fast"])
     - execute_claudecode_function("claudecode_pixi_compliance")
     - execute_claudecode_function("claudecode_test_analysis")
-    
+
     Security Features:
     - ONLY allows functions starting with 'claudecode_'
     - Validates and sanitizes all arguments
     - Prevents shell injection attacks
     - Enforces timeout limits (1-300 seconds)
     - Logs all executions for audit
-    
+
     Performance:
     - Sub-100ms execution overhead vs direct Bash
     - Same stdout/stderr/exit_code behavior as Bash
     - Identical error handling and semantics
-    
+
     Returns: {"success": bool, "stdout": str, "stderr": str, "exit_code": int, "execution_time": float}
-    
+
     This function maintains FULL BACKWARD COMPATIBILITY with existing claudecode functions
     while providing comprehensive security validation and audit logging.
     """
@@ -103,7 +103,7 @@ def execute_claudecode_function(
             "stdout": "",
             "stderr": f"MCP server error: {str(e)}",
             "exit_code": 1,
-            "execution_time": 0.0
+            "execution_time": 0.0,
         }
 
 
@@ -111,15 +111,15 @@ def execute_claudecode_function(
 def list_available_functions(category: str | None = None) -> dict[str, Any]:
     """
     List available claudecode functions with descriptions.
-    
+
     Use for function discovery and agent development:
     - list_available_functions() for all functions
     - list_available_functions("git") for git-related functions only
     - list_available_functions("python") for Python quality functions
-    
+
     Categories include:
     - "atomic": Atomic design and refactoring functions
-    - "git": Git workflow and repository functions  
+    - "git": Git workflow and repository functions
     - "python": Python quality, linting, and analysis functions
     - "quality": Quality assurance and testing functions
     - "session": Session management and continuity functions
@@ -128,9 +128,9 @@ def list_available_functions(category: str | None = None) -> dict[str, Any]:
     - "pixi": PIXI package management functions
     - "ci": CI/CD workflow and monitoring functions
     - "security": Security scanning and validation functions
-    
+
     Returns: {"functions": [...], "total_count": int, "categories": {...}}
-    
+
     Perfect for agent developers who need to discover available claudecode functions
     or validate that required functions exist before attempting execution.
     """
@@ -142,7 +142,7 @@ def list_available_functions(category: str | None = None) -> dict[str, Any]:
             "functions": [],
             "total_count": 0,
             "categories": {},
-            "error": f"Function discovery failed: {str(e)}"
+            "error": f"Function discovery failed: {str(e)}",
         }
 
 
@@ -150,11 +150,11 @@ def list_available_functions(category: str | None = None) -> dict[str, Any]:
 def validate_function_exists(function_name: str) -> dict[str, Any]:
     """
     Check if a claudecode function exists and is accessible.
-    
+
     Use before executing functions to ensure they're available:
     - validate_function_exists("claudecode_system_info")
     - validate_function_exists("claudecode_git_status")
-    
+
     Essential for error handling in agents:
     ```python
     validation = validate_function_exists("claudecode_custom_function")
@@ -164,9 +164,9 @@ def validate_function_exists(function_name: str) -> dict[str, Any]:
         # Handle missing function gracefully
         pass
     ```
-    
+
     Returns: {"exists": bool, "executable": bool, "description": str, "path": str}
-    
+
     Helps agents provide better error messages when required claudecode functions
     are missing or not properly installed.
     """
@@ -179,7 +179,7 @@ def validate_function_exists(function_name: str) -> dict[str, Any]:
             "executable": False,
             "description": f"Validation error: {str(e)}",
             "path": None,
-            "error": str(e)
+            "error": str(e),
         }
 
 
@@ -192,21 +192,21 @@ def validate_function_exists(function_name: str) -> dict[str, Any]:
 def execute_bulk_functions(operations: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Execute multiple claudecode functions atomically.
-    
+
     Use for batch operations that must succeed or fail together:
-    
+
     Example operations:
     [
         {"function_name": "claudecode_git_status"},
         {"function_name": "claudecode_quality_check", "args": ["--fast"]},
         {"function_name": "claudecode_test_analysis", "timeout_seconds": 60}
     ]
-    
+
     Atomic semantics: Either ALL operations succeed, or ALL are rolled back.
     Perfect for complex workflows that require consistency.
-    
+
     Returns: {"success": bool, "results": [...], "errors": [...], "completed_operations": int}
-    
+
     Most individual agents should use execute_claudecode_function() instead.
     This is primarily for orchestration agents managing complex workflows.
     """
@@ -220,7 +220,7 @@ def execute_bulk_functions(operations: list[dict[str, Any]]) -> dict[str, Any]:
             "errors": [f"Bulk execution failed: {str(e)}"],
             "partial_success": False,
             "completed_operations": 0,
-            "total_operations": len(operations) if operations else 0
+            "total_operations": len(operations) if operations else 0,
         }
 
 
@@ -233,20 +233,20 @@ def execute_bulk_functions(operations: list[dict[str, Any]]) -> dict[str, Any]:
 def get_execution_stats(hours: int = 24) -> dict[str, Any]:
     """
     Get execution statistics for monitoring and debugging.
-    
+
     Use for performance monitoring and optimization:
     - get_execution_stats(1) for last hour
     - get_execution_stats(24) for last day (default)
     - get_execution_stats(168) for last week
-    
+
     Returns comprehensive metrics including:
     - Total executions and success rates
     - Most frequently used functions
     - Average execution times
     - Security events and violations
-    
+
     Returns: {"total_executions": int, "success_rate": float, "most_used_functions": {...}}
-    
+
     Essential for identifying performance bottlenecks and optimizing agent workflows.
     Generally only needed for debugging or maintenance workflows.
     """
@@ -261,7 +261,7 @@ def get_execution_stats(hours: int = 24) -> dict[str, Any]:
             "success_rate": 0.0,
             "average_execution_time": 0.0,
             "most_used_functions": {},
-            "error": str(e)
+            "error": str(e),
         }
 
 
@@ -269,20 +269,20 @@ def get_execution_stats(hours: int = 24) -> dict[str, Any]:
 def get_system_health() -> dict[str, Any]:
     """
     Get system health information for monitoring.
-    
+
     Use for health checks and system monitoring:
     - Monitor claudecode function availability
     - Check system resource usage
     - Identify security alerts or issues
-    
+
     Returns health status including:
     - Available function count
     - Recent execution metrics
     - Error rates and response times
     - Security alerts and resource usage
-    
+
     Returns: {"healthy": bool, "available_functions": int, "security_alerts": [...]}
-    
+
     Critical for system monitoring and identifying infrastructure issues
     that might affect claudecode function execution.
     """
@@ -298,7 +298,7 @@ def get_system_health() -> dict[str, Any]:
             "average_response_time": 0.0,
             "security_alerts": [f"Health check failed: {str(e)}"],
             "resource_usage": {},
-            "error": str(e)
+            "error": str(e),
         }
 
 
@@ -306,17 +306,17 @@ def get_system_health() -> dict[str, Any]:
 def cleanup_cache(max_age_minutes: int = 60) -> dict[str, Any]:
     """
     Clean up cached function discovery and validation data.
-    
+
     Use for maintenance and memory management:
     - cleanup_cache(30) for aggressive cleanup
     - cleanup_cache(60) for normal maintenance (default)
     - cleanup_cache(180) for conservative cleanup
-    
+
     Clears cached function validation and discovery results to free memory
     and ensure fresh data on subsequent requests.
-    
+
     Returns: {"success": bool, "cleaned_entries": int}
-    
+
     Usually not needed for individual agents - the cache automatically manages TTL.
     Primarily for maintenance workflows or when function availability changes.
     """
@@ -324,11 +324,7 @@ def cleanup_cache(max_age_minutes: int = 60) -> dict[str, Any]:
         return container.shell_service.cleanup_cache(max_age_minutes)
     except Exception as e:
         logger.error(f"Error in cleanup_cache: {e}")
-        return {
-            "success": False,
-            "cleaned_entries": 0,
-            "error": str(e)
-        }
+        return {"success": False, "cleaned_entries": 0, "error": str(e)}
 
 
 # =============================================================================
@@ -361,19 +357,19 @@ def get_server_health() -> dict[str, Any]:
     """Get claudecode shell server health information."""
     try:
         health = container.shell_service.get_system_health()
-        
+
         # Add server-specific health info
         health["server_status"] = "running"
         health["mcp_version"] = "0.1.0"
         health["security_model"] = "claudecode_whitelist"
-        
+
         return health
     except Exception as e:
         logger.error(f"Error getting server health: {e}")
         return {
             "healthy": False,
             "server_status": "error",
-            "error": f"Health check failed: {str(e)}"
+            "error": f"Health check failed: {str(e)}",
         }
 
 
@@ -395,28 +391,34 @@ def get_server_stats() -> dict[str, Any]:
 def main():
     """Main entry point for the MCP server."""
     import sys
-    
+
     # Check if we're running in test mode
     if "pytest" in sys.modules or "test" in sys.argv:
         logger.info("Running in test mode")
-    
+
     logger.info("ClaudeCode Shell MCP Server starting...")
     logger.info("Working directory: %s", container.get_working_directory())
-    
+
     # Validate system setup
     try:
         health = container.shell_service.get_system_health()
-        logger.info("System health check: %s functions available", health["available_functions"])
-        
+        logger.info(
+            "System health check: %s functions available", health["available_functions"]
+        )
+
         if not health["healthy"]:
-            logger.warning("System health issues detected: %s", health.get("security_alerts", []))
+            logger.warning(
+                "System health issues detected: %s", health.get("security_alerts", [])
+            )
     except Exception as e:
         logger.error("Failed to perform initial health check: %s", e)
         # Continue anyway - some functions might still work
-    
+
     logger.info("ClaudeCode Shell MCP Server ready for secure function execution")
-    logger.info("Security model: claudecode_* function whitelist with argument validation")
-    
+    logger.info(
+        "Security model: claudecode_* function whitelist with argument validation"
+    )
+
     app.run()
 
 

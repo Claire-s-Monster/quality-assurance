@@ -118,7 +118,9 @@ class _RecordingExecutor:
         self.select_calls += 1
         return self.selection
 
-    def run_task(self, task_name, args=None, timeout=300, working_dir=None, environment=None):
+    def run_task(
+        self, task_name, args=None, timeout=300, working_dir=None, environment=None
+    ):
         self.run_environments.append(environment)
         return {"success": True, "stdout": "{}", "stderr": "", "exit_code": 0}
 

@@ -33,7 +33,13 @@ TOOL_TASK_ALIASES: Dict[str, tuple[str, ...]] = {
 }
 
 QUALITY_ENVIRONMENT_PREFERENCE: tuple[str, ...] = (
-    "quality", "lint", "quality-ci", "ci", "quality-extended", "quality-full", "dev",
+    "quality",
+    "lint",
+    "quality-ci",
+    "ci",
+    "quality-extended",
+    "quality-full",
+    "dev",
 )
 
 
@@ -57,6 +63,7 @@ def _resolve_pixi_executable() -> str:
 @dataclass
 class QualityEnvironmentInfo:
     """Quality tools environment information."""
+
     available_tools: Set[str]
     quality_tasks: Dict[str, str]
     environment_health: str  # optimal, suboptimal, degraded
@@ -69,6 +76,7 @@ class QualityEnvironmentInfo:
 @dataclass
 class QualityTaskTemplate:
     """Quality-focused pixi task template."""
+
     tool_name: str
     task_name: str
     command: str
@@ -118,7 +126,7 @@ class DirectPixiExecutionAdapter:
             "pylint": ["pylint", "python -m pylint"],
             "flake8": ["flake8", "python -m flake8"],
             "black": ["black", "python -m black"],
-            "isort": ["isort", "python -m isort"]
+            "isort": ["isort", "python -m isort"],
         }
 
     def run_task(
@@ -128,7 +136,7 @@ class DirectPixiExecutionAdapter:
         timeout: int = 300,
         working_dir: str | None = None,
         environment: str | None = None,
-        as_command: bool = False
+        as_command: bool = False,
     ) -> Dict[str, Any]:
         """
         Execute a pixi task with arguments.
@@ -152,7 +160,7 @@ class DirectPixiExecutionAdapter:
                     "exit_code": 1,
                     "execution_time": time.time() - start_time,
                     "task_name": task_name,
-                    "working_dir": working_dir
+                    "working_dir": working_dir,
                 }
 
             # Check if task exists
@@ -165,7 +173,7 @@ class DirectPixiExecutionAdapter:
                     "exit_code": 1,
                     "execution_time": time.time() - start_time,
                     "task_name": task_name,
-                    "working_dir": working_dir
+                    "working_dir": working_dir,
                 }
 
             # Build command
@@ -174,20 +182,23 @@ class DirectPixiExecutionAdapter:
                 command += ["--environment", environment]
             command += [task_name] + args
 
-            self.logging.log_info(f"Executing pixi task: {' '.join(command)}", {
-                "task_name": task_name,
-                "working_dir": working_dir,
-                "timeout": timeout,
-                "environment": environment
-            })
+            self.logging.log_info(
+                f"Executing pixi task: {' '.join(command)}",
+                {
+                    "task_name": task_name,
+                    "working_dir": working_dir,
+                    "timeout": timeout,
+                    "environment": environment,
+                },
+            )
 
             # Execute command
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603 -- argv list, no shell; the MCP server runs pixi tasks by design
                 command,
                 capture_output=True,
                 text=True,
                 cwd=working_dir,
-                timeout=timeout
+                timeout=timeout,
             )
 
             execution_time = time.time() - start_time
@@ -197,10 +208,10 @@ class DirectPixiExecutionAdapter:
             # contributes to the duration baseline used for timeout diagnostics.
             self._record_task_duration(task_name, execution_time * 1000)
 
-            self.logging.log_info(f"Pixi task completed: {task_name} ({'success' if success else 'failed'})", {
-                "exit_code": result.returncode,
-                "execution_time": execution_time
-            })
+            self.logging.log_info(
+                f"Pixi task completed: {task_name} ({'success' if success else 'failed'})",
+                {"exit_code": result.returncode, "execution_time": execution_time},
+            )
 
             return {
                 "success": success,
@@ -210,19 +221,24 @@ class DirectPixiExecutionAdapter:
                 "execution_time": execution_time,
                 "task_name": task_name,
                 "working_dir": working_dir,
-                "command_line": " ".join(command)
+                "command_line": " ".join(command),
             }
 
         except subprocess.TimeoutExpired:
             execution_time = time.time() - start_time
             diagnostic = self._build_timeout_diagnostic(task_name, timeout)
-            error_msg = f"Task '{task_name}' timed out after {timeout} seconds — {diagnostic}"
+            error_msg = (
+                f"Task '{task_name}' timed out after {timeout} seconds — {diagnostic}"
+            )
 
-            self.logging.log_error(error_msg, {
-                "task_name": task_name,
-                "timeout": timeout,
-                "working_dir": working_dir
-            })
+            self.logging.log_error(
+                error_msg,
+                {
+                    "task_name": task_name,
+                    "timeout": timeout,
+                    "working_dir": working_dir,
+                },
+            )
 
             return {
                 "success": False,
@@ -231,18 +247,17 @@ class DirectPixiExecutionAdapter:
                 "exit_code": 124,  # Standard timeout exit code
                 "execution_time": execution_time,
                 "task_name": task_name,
-                "working_dir": working_dir
+                "working_dir": working_dir,
             }
 
         except Exception as e:
             execution_time = time.time() - start_time
             error_msg = f"Error executing task '{task_name}': {str(e)}"
 
-            self.logging.log_error(error_msg, {
-                "task_name": task_name,
-                "working_dir": working_dir,
-                "error": str(e)
-            })
+            self.logging.log_error(
+                error_msg,
+                {"task_name": task_name, "working_dir": working_dir, "error": str(e)},
+            )
 
             return {
                 "success": False,
@@ -252,7 +267,7 @@ class DirectPixiExecutionAdapter:
                 "execution_time": execution_time,
                 "task_name": task_name,
                 "working_dir": working_dir,
-                "error": str(e)
+                "error": str(e),
             }
 
     def _record_task_duration(self, task_name: str, duration_ms: float) -> None:
@@ -305,7 +320,7 @@ class DirectPixiExecutionAdapter:
         self,
         task_name: str,
         working_dir: str | None = None,
-        environment: str | None = None
+        environment: str | None = None,
     ) -> Dict[str, Any]:
         """
         Check if a pixi task exists.
@@ -319,7 +334,7 @@ class DirectPixiExecutionAdapter:
                 return {
                     "exists": False,
                     "working_dir": working_dir,
-                    "error": "Not a pixi project"
+                    "error": "Not a pixi project",
                 }
 
             available_tasks = self._get_available_tasks(working_dir, environment)
@@ -328,26 +343,22 @@ class DirectPixiExecutionAdapter:
             return {
                 "exists": exists,
                 "working_dir": working_dir,
-                "available_tasks": list(available_tasks.keys()) if exists else []
+                "available_tasks": list(available_tasks.keys()) if exists else [],
             }
 
         except Exception as e:
-            self.logging.log_error(f"Error checking task existence: {str(e)}", {
-                "task_name": task_name,
-                "working_dir": working_dir
-            })
+            self.logging.log_error(
+                f"Error checking task existence: {str(e)}",
+                {"task_name": task_name, "working_dir": working_dir},
+            )
 
-            return {
-                "exists": False,
-                "working_dir": working_dir,
-                "error": str(e)
-            }
+            return {"exists": False, "working_dir": working_dir, "error": str(e)}
 
     def resolve_task_name(
         self,
         tool_or_candidates: str | List[str],
         working_dir: str | None = None,
-        environment: str | None = None
+        environment: str | None = None,
     ) -> Optional[str]:
         """Resolve a quality tool (or explicit candidate list) to a real pixi task.
 
@@ -390,7 +401,7 @@ class DirectPixiExecutionAdapter:
                 return {
                     "tasks": {},
                     "working_dir": working_dir,
-                    "error": "Not a pixi project"
+                    "error": "Not a pixi project",
                 }
 
             tasks = self._get_available_tasks(working_dir)
@@ -398,19 +409,15 @@ class DirectPixiExecutionAdapter:
             return {
                 "tasks": tasks,
                 "working_dir": working_dir,
-                "task_count": len(tasks)
+                "task_count": len(tasks),
             }
 
         except Exception as e:
-            self.logging.log_error(f"Error listing tasks: {str(e)}", {
-                "working_dir": working_dir
-            })
+            self.logging.log_error(
+                f"Error listing tasks: {str(e)}", {"working_dir": working_dir}
+            )
 
-            return {
-                "tasks": {},
-                "working_dir": working_dir,
-                "error": str(e)
-            }
+            return {"tasks": {}, "working_dir": working_dir, "error": str(e)}
 
     def get_project_status(self, working_dir: str | None = None) -> Dict[str, Any]:
         """
@@ -427,7 +434,7 @@ class DirectPixiExecutionAdapter:
                 return {
                     "is_pixi_project": False,
                     "working_dir": working_dir,
-                    "error": "Not a pixi project"
+                    "error": "Not a pixi project",
                 }
 
             # Get basic project information
@@ -436,12 +443,12 @@ class DirectPixiExecutionAdapter:
 
             # Try to get pixi info
             try:
-                result = subprocess.run(
+                result = subprocess.run(  # noqa: S603 -- fixed argv, no shell
                     [self._pixi_bin, "info"],
                     capture_output=True,
                     text=True,
                     cwd=working_dir,
-                    timeout=10
+                    timeout=10,
                 )
                 pixi_info_available = result.returncode == 0
                 pixi_info_output = result.stdout if pixi_info_available else None
@@ -457,18 +464,18 @@ class DirectPixiExecutionAdapter:
                 "task_count": len(tasks),
                 "pixi_info_available": pixi_info_available,
                 "pixi_info_output": pixi_info_output,
-                "healthy": is_pixi_project and lock_file_exists
+                "healthy": is_pixi_project and lock_file_exists,
             }
 
         except Exception as e:
-            self.logging.log_error(f"Error getting project status: {str(e)}", {
-                "working_dir": working_dir
-            })
+            self.logging.log_error(
+                f"Error getting project status: {str(e)}", {"working_dir": working_dir}
+            )
 
             return {
                 "is_pixi_project": False,
                 "working_dir": working_dir,
-                "error": str(e)
+                "error": str(e),
             }
 
     def _is_pixi_project(self, path: str) -> bool:
@@ -483,8 +490,9 @@ class DirectPixiExecutionAdapter:
             pyproject_toml_path = Path(path) / "pyproject.toml"
             if pyproject_toml_path.exists():
                 import toml
+
                 try:
-                    with open(pyproject_toml_path, 'r') as f:
+                    with open(pyproject_toml_path, "r") as f:
                         config = toml.load(f)
                         return "tool" in config and "pixi" in config["tool"]
                 except Exception:
@@ -503,10 +511,10 @@ class DirectPixiExecutionAdapter:
         import toml
 
         if pixi_toml_path.exists():
-            with open(pixi_toml_path, 'r') as f:
+            with open(pixi_toml_path, "r") as f:
                 return toml.load(f)
         elif pyproject_toml_path.exists():
-            with open(pyproject_toml_path, 'r') as f:
+            with open(pyproject_toml_path, "r") as f:
                 full_config = toml.load(f)
                 if "tool" in full_config and "pixi" in full_config["tool"]:
                     return full_config["tool"]["pixi"]
@@ -608,8 +616,7 @@ class DirectPixiExecutionAdapter:
         if "default" not in names:
             names.insert(0, "default")
         return [
-            name for name in names
-            if task_name in self._get_available_tasks(path, name)
+            name for name in names if task_name in self._get_available_tasks(path, name)
         ]
 
     def select_quality_environment(
@@ -629,7 +636,10 @@ class DirectPixiExecutionAdapter:
 
         candidates = self.environments_for_task(task_name, path)
         if not candidates:
-            return None, f"task '{task_name}' is not defined in any declared environment"
+            return (
+                None,
+                f"task '{task_name}' is not defined in any declared environment",
+            )
 
         for preferred in QUALITY_ENVIRONMENT_PREFERENCE:
             if preferred in candidates:
@@ -637,7 +647,9 @@ class DirectPixiExecutionAdapter:
 
         non_default = [c for c in candidates if c != "default"]
         if len(non_default) == 1:
-            return non_default[0], f"only non-default environment defining the task among {candidates}"
+            return non_default[
+                0
+            ], f"only non-default environment defining the task among {candidates}"
 
         return None, (
             f"ambiguous: task '{task_name}' is defined in {candidates} and none is a "
@@ -657,7 +669,7 @@ class DirectPixiExecutionAdapter:
         environment_optimization: bool = True,
         timeout: int = 300,
         working_dir: str | None = None,
-        environment: str | None = None
+        environment: str | None = None,
     ) -> Dict[str, Any]:
         """
         Execute quality-focused pixi task with intelligence.
@@ -687,12 +699,15 @@ class DirectPixiExecutionAdapter:
 
         try:
             # Log quality task execution start
-            self.logging.log_info(f"Starting quality task: {task_name} with {quality_tool}", {
-                "task_name": task_name,
-                "quality_tool": quality_tool,
-                "target_paths": target_paths,
-                "environment_optimization": environment_optimization
-            })
+            self.logging.log_info(
+                f"Starting quality task: {task_name} with {quality_tool}",
+                {
+                    "task_name": task_name,
+                    "quality_tool": quality_tool,
+                    "target_paths": target_paths,
+                    "environment_optimization": environment_optimization,
+                },
+            )
 
             # Detect and validate quality environment
             env_info = self.detect_quality_environment(working_dir)
@@ -708,8 +723,8 @@ class DirectPixiExecutionAdapter:
                         "tool_available": False,
                         "environment_health": env_info.environment_health,
                         "missing_tools": list(env_info.missing_tools),
-                        "recommendations": env_info.recommendations
-                    }
+                        "recommendations": env_info.recommendations,
+                    },
                 }
 
             # Generate quality task arguments based on tool and config
@@ -731,7 +746,7 @@ class DirectPixiExecutionAdapter:
                     "exit_code": 1,
                     "execution_time": time.time() - start_time,
                     "task_name": task_name,
-                    "working_dir": working_dir
+                    "working_dir": working_dir,
                 }
 
             if body is None or self._is_bare_tool_body(body, quality_tool):
@@ -741,19 +756,21 @@ class DirectPixiExecutionAdapter:
                     args=optimized_args,
                     timeout=timeout,
                     working_dir=working_dir,
-                    environment=environment
+                    environment=environment,
                 )
             else:
                 body_mode = "direct_tool"
                 if environment is None:
-                    environment, _ = self.select_quality_environment(task_name, working_dir)
+                    environment, _ = self.select_quality_environment(
+                        task_name, working_dir
+                    )
                 base_result = self.run_task(
                     task_name=quality_tool,
                     args=optimized_args,
                     timeout=timeout,
                     working_dir=working_dir,
                     environment=environment,
-                    as_command=True
+                    as_command=True,
                 )
             base_result["task_body_mode"] = body_mode
 
@@ -768,12 +785,15 @@ class DirectPixiExecutionAdapter:
             execution_time = time.time() - start_time
             error_msg = f"Quality task execution failed: {str(e)}"
 
-            self.logging.log_error(error_msg, {
-                "task_name": task_name,
-                "quality_tool": quality_tool,
-                "working_dir": working_dir,
-                "error": str(e)
-            })
+            self.logging.log_error(
+                error_msg,
+                {
+                    "task_name": task_name,
+                    "quality_tool": quality_tool,
+                    "working_dir": working_dir,
+                    "error": str(e),
+                },
+            )
 
             return {
                 "success": False,
@@ -786,11 +806,16 @@ class DirectPixiExecutionAdapter:
                 "quality_intelligence": {
                     "tool_available": False,
                     "execution_error": str(e),
-                    "recommendations": ["Check pixi environment configuration", "Verify quality tool installation"]
-                }
+                    "recommendations": [
+                        "Check pixi environment configuration",
+                        "Verify quality tool installation",
+                    ],
+                },
             }
 
-    def detect_quality_environment(self, working_dir: str = None) -> QualityEnvironmentInfo:
+    def detect_quality_environment(
+        self, working_dir: str = None
+    ) -> QualityEnvironmentInfo:
         """
         Detect quality tools available in pixi environment.
 
@@ -830,7 +855,7 @@ class DirectPixiExecutionAdapter:
                     recommendations=["Initialize pixi project with 'pixi init'"],
                     tool_versions={},
                     missing_tools=set(self._quality_tools_patterns.keys()),
-                    performance_indicators={}
+                    performance_indicators={},
                 )
 
             # Get available tasks
@@ -874,7 +899,7 @@ class DirectPixiExecutionAdapter:
                 recommendations=recommendations,
                 tool_versions=tool_versions,
                 missing_tools=missing_tools,
-                performance_indicators=performance_indicators
+                performance_indicators=performance_indicators,
             )
 
             self._quality_env_cache = env_info
@@ -883,10 +908,10 @@ class DirectPixiExecutionAdapter:
             return env_info
 
         except Exception as e:
-            self.logging.log_error(f"Quality environment detection failed: {str(e)}", {
-                "working_dir": working_dir,
-                "error": str(e)
-            })
+            self.logging.log_error(
+                f"Quality environment detection failed: {str(e)}",
+                {"working_dir": working_dir, "error": str(e)},
+            )
 
             return QualityEnvironmentInfo(
                 available_tools=set(),
@@ -895,7 +920,7 @@ class DirectPixiExecutionAdapter:
                 recommendations=[f"Environment detection failed: {str(e)}"],
                 tool_versions={},
                 missing_tools=set(self._quality_tools_patterns.keys()),
-                performance_indicators={}
+                performance_indicators={},
             )
 
     def generate_quality_task_template(
@@ -903,7 +928,7 @@ class DirectPixiExecutionAdapter:
         tool_name: str,
         target_pattern: str = "src/",
         output_format: str = "json",
-        task_type: str = "check"  # check, fix, report
+        task_type: str = "check",  # check, fix, report
     ) -> QualityTaskTemplate:
         """
         Generate pixi task template for quality tools.
@@ -926,25 +951,37 @@ class DirectPixiExecutionAdapter:
         try:
             # Tool-specific template generation
             if tool_name == "ruff":
-                return self._generate_ruff_template(target_pattern, output_format, task_type)
+                return self._generate_ruff_template(
+                    target_pattern, output_format, task_type
+                )
             elif tool_name == "mypy":
-                return self._generate_mypy_template(target_pattern, output_format, task_type)
+                return self._generate_mypy_template(
+                    target_pattern, output_format, task_type
+                )
             elif tool_name == "bandit":
-                return self._generate_bandit_template(target_pattern, output_format, task_type)
+                return self._generate_bandit_template(
+                    target_pattern, output_format, task_type
+                )
             elif tool_name == "pytest":
-                return self._generate_pytest_template(target_pattern, output_format, task_type)
+                return self._generate_pytest_template(
+                    target_pattern, output_format, task_type
+                )
             else:
                 # Generic template for other tools
-                return self._generate_generic_template(tool_name, target_pattern, output_format, task_type)
+                return self._generate_generic_template(
+                    tool_name, target_pattern, output_format, task_type
+                )
 
         except Exception as e:
-            self.logging.log_error(f"Template generation failed for {tool_name}: {str(e)}")
-            return self._generate_generic_template(tool_name, target_pattern, output_format, task_type)
+            self.logging.log_error(
+                f"Template generation failed for {tool_name}: {str(e)}"
+            )
+            return self._generate_generic_template(
+                tool_name, target_pattern, output_format, task_type
+            )
 
     def optimize_quality_environment(
-        self,
-        required_tools: List[str],
-        working_dir: str = None
+        self, required_tools: List[str], working_dir: str = None
     ) -> Dict[str, Any]:
         """
         Optimize pixi environment for quality tool execution.
@@ -969,7 +1006,7 @@ class DirectPixiExecutionAdapter:
                 "optimizations_applied": [],
                 "performance_improvements": {},
                 "recommendations": [],
-                "environment_changes": {}
+                "environment_changes": {},
             }
 
             # Detect current environment
@@ -981,7 +1018,9 @@ class DirectPixiExecutionAdapter:
                     tool_optimizations = self._optimize_tool_environment(
                         tool_name, working_dir, env_info
                     )
-                    optimization_results["optimizations_applied"].extend(tool_optimizations)
+                    optimization_results["optimizations_applied"].extend(
+                        tool_optimizations
+                    )
                 else:
                     optimization_results["recommendations"].append(
                         f"Install {tool_name} via pixi: pixi add {tool_name}"
@@ -994,8 +1033,10 @@ class DirectPixiExecutionAdapter:
             optimization_results["performance_improvements"] = global_optimizations
 
             # Generate environment optimization report
-            optimization_results["optimization_report"] = self._generate_optimization_report(
-                env_info, required_tools, optimization_results
+            optimization_results["optimization_report"] = (
+                self._generate_optimization_report(
+                    env_info, required_tools, optimization_results
+                )
             )
 
             return optimization_results
@@ -1005,14 +1046,14 @@ class DirectPixiExecutionAdapter:
             return {
                 "optimizations_applied": [],
                 "error": str(e),
-                "recommendations": ["Check pixi environment and configuration"]
+                "recommendations": ["Check pixi environment and configuration"],
             }
 
     def monitor_environment_health(
         self,
         working_dir: str = None,
         continuous_monitoring: bool = False,
-        health_check_interval: int = 300  # 5 minutes
+        health_check_interval: int = 300,  # 5 minutes
     ) -> Dict[str, Any]:
         """
         Monitor quality environment health with optional continuous monitoring.
@@ -1042,20 +1083,20 @@ class DirectPixiExecutionAdapter:
                     "status": env_info.environment_health,
                     "score": health_score,
                     "tools_available": len(env_info.available_tools),
-                    "performance_indicators": env_info.performance_indicators
+                    "performance_indicators": env_info.performance_indicators,
                 },
                 "alerts": alerts,
                 "monitoring_configuration": {
                     "continuous_monitoring": continuous_monitoring,
                     "check_interval": health_check_interval,
                     "working_directory": working_dir,
-                    "last_check": time.time()
+                    "last_check": time.time(),
                 },
                 "recommendations": env_info.recommendations,
                 "health_trends": {
                     "status": "stable",  # Would track over time in full implementation
-                    "improvement_areas": self._identify_improvement_areas(env_info)
-                }
+                    "improvement_areas": self._identify_improvement_areas(env_info),
+                },
             }
 
             return monitoring_result
@@ -1065,13 +1106,13 @@ class DirectPixiExecutionAdapter:
             return {
                 "error": str(e),
                 "current_health": {"status": "unknown", "score": 0},
-                "alerts": [{"level": "error", "message": f"Health monitoring failed: {str(e)}"}]
+                "alerts": [
+                    {"level": "error", "message": f"Health monitoring failed: {str(e)}"}
+                ],
             }
 
     def _calculate_health_score(self, env_info: QualityEnvironmentInfo) -> float:
         """Calculate overall environment health score (0-100)."""
-        base_score = 0
-
         # Tool availability (40% of score)
         core_tools = {"ruff", "mypy", "bandit", "pytest"}
         available_core = core_tools.intersection(env_info.available_tools)
@@ -1090,36 +1131,48 @@ class DirectPixiExecutionAdapter:
         total_score = tool_score + health_score + task_score + perf_score
         return min(100, max(0, total_score))
 
-    def _generate_health_alerts(self, env_info: QualityEnvironmentInfo, health_score: float) -> List[Dict[str, str]]:
+    def _generate_health_alerts(
+        self, env_info: QualityEnvironmentInfo, health_score: float
+    ) -> List[Dict[str, str]]:
         """Generate health alerts based on environment status."""
         alerts = []
 
         if health_score < 50:
-            alerts.append({
-                "level": "critical",
-                "message": f"Environment health score critically low: {health_score:.1f}/100"
-            })
+            alerts.append(
+                {
+                    "level": "critical",
+                    "message": f"Environment health score critically low: {health_score:.1f}/100",
+                }
+            )
         elif health_score < 70:
-            alerts.append({
-                "level": "warning",
-                "message": f"Environment health needs attention: {health_score:.1f}/100"
-            })
+            alerts.append(
+                {
+                    "level": "warning",
+                    "message": f"Environment health needs attention: {health_score:.1f}/100",
+                }
+            )
 
         if env_info.environment_health == "degraded":
-            alerts.append({
-                "level": "error",
-                "message": "Environment is in degraded state - immediate action required"
-            })
+            alerts.append(
+                {
+                    "level": "error",
+                    "message": "Environment is in degraded state - immediate action required",
+                }
+            )
 
         if len(env_info.missing_tools) > 3:
-            alerts.append({
-                "level": "warning",
-                "message": f"Multiple quality tools missing: {len(env_info.missing_tools)} tools"
-            })
+            alerts.append(
+                {
+                    "level": "warning",
+                    "message": f"Multiple quality tools missing: {len(env_info.missing_tools)} tools",
+                }
+            )
 
         return alerts
 
-    def _identify_improvement_areas(self, env_info: QualityEnvironmentInfo) -> List[str]:
+    def _identify_improvement_areas(
+        self, env_info: QualityEnvironmentInfo
+    ) -> List[str]:
         """Identify specific areas for environment improvement."""
         improvements = []
 
@@ -1152,14 +1205,14 @@ class DirectPixiExecutionAdapter:
         tool_name: str,
         command_patterns: List[str],
         available_tasks: Dict[str, str],
-        working_dir: str
+        working_dir: str,
     ) -> Dict[str, Any]:
         """Analyze if a specific quality tool is available and configured."""
         result = {
             "available": False,
             "version": None,
             "tasks": {},
-            "command_found": None
+            "command_found": None,
         }
 
         try:
@@ -1192,21 +1245,21 @@ class DirectPixiExecutionAdapter:
             version_commands = [
                 [tool_name, "--version"],
                 [tool_name, "-V"],
-                ["python", "-m", tool_name, "--version"]
+                ["python", "-m", tool_name, "--version"],
             ]
 
             for cmd in version_commands:
                 try:
-                    result = subprocess.run(
+                    result = subprocess.run(  # noqa: S603 -- argv from hardcoded version-probe commands, no shell
                         [self._pixi_bin, "run"] + cmd,
                         capture_output=True,
                         text=True,
                         cwd=working_dir,
-                        timeout=10
+                        timeout=10,
                     )
                     if result.returncode == 0:
-                        return result.stdout.strip().split('\n')[0]
-                except:
+                        return result.stdout.strip().split("\n")[0]
+                except:  # noqa: S112, E722 -- try the next version-probe command if this one fails
                     continue
 
             return None
@@ -1218,11 +1271,13 @@ class DirectPixiExecutionAdapter:
         self,
         available_tools: Set[str],
         missing_tools: Set[str],
-        quality_tasks: Dict[str, str]
+        quality_tasks: Dict[str, str],
     ) -> str:
         """Assess overall environment health."""
         total_tools = len(available_tools) + len(missing_tools)
-        availability_ratio = len(available_tools) / total_tools if total_tools > 0 else 0
+        availability_ratio = (
+            len(available_tools) / total_tools if total_tools > 0 else 0
+        )
 
         # Health based on tool availability and task configuration
         if availability_ratio >= 0.8 and len(quality_tasks) >= 3:
@@ -1237,7 +1292,7 @@ class DirectPixiExecutionAdapter:
         available_tools: Set[str],
         missing_tools: Set[str],
         quality_tasks: Dict[str, str],
-        health: str
+        health: str,
     ) -> List[str]:
         """Generate environment improvement recommendations."""
         recommendations = []
@@ -1249,7 +1304,9 @@ class DirectPixiExecutionAdapter:
             core_tools = {"ruff", "mypy", "bandit", "pytest"}
             missing_core = core_tools.intersection(missing_tools)
             if missing_core:
-                recommendations.append(f"Install essential tools: {', '.join(missing_core)}")
+                recommendations.append(
+                    f"Install essential tools: {', '.join(missing_core)}"
+                )
 
         if len(quality_tasks) < 3:
             recommendations.append("Configure more quality tasks in pixi.toml")
@@ -1260,10 +1317,7 @@ class DirectPixiExecutionAdapter:
         return recommendations
 
     def _calculate_performance_indicators(
-        self,
-        available_tools: Set[str],
-        quality_tasks: Dict[str, str],
-        working_dir: str
+        self, available_tools: Set[str], quality_tasks: Dict[str, str], working_dir: str
     ) -> Dict[str, Any]:
         """Calculate performance indicators for the environment."""
         return {
@@ -1271,7 +1325,7 @@ class DirectPixiExecutionAdapter:
             "task_count": len(quality_tasks),
             "environment_score": min(10, len(available_tools) + len(quality_tasks)),
             "parallel_capable": len(available_tools) >= 3,
-            "cache_friendly": "ruff" in available_tools
+            "cache_friendly": "ruff" in available_tools,
         }
 
     @staticmethod
@@ -1281,10 +1335,7 @@ class DirectPixiExecutionAdapter:
         return [str(t) for t in tokens] == [quality_tool]
 
     def _generate_quality_args(
-        self,
-        quality_tool: str,
-        target_paths: List[str],
-        quality_config: Dict[str, Any]
+        self, quality_tool: str, target_paths: List[str], quality_config: Dict[str, Any]
     ) -> List[str]:
         """Generate optimized arguments for quality tool execution."""
         args = []
@@ -1304,7 +1355,9 @@ class DirectPixiExecutionAdapter:
 
         return args
 
-    def _generate_ruff_args(self, target_paths: List[str], config: Dict[str, Any]) -> List[str]:
+    def _generate_ruff_args(
+        self, target_paths: List[str], config: Dict[str, Any]
+    ) -> List[str]:
         """Generate optimized Ruff arguments."""
         args = ["check"]
 
@@ -1321,7 +1374,9 @@ class DirectPixiExecutionAdapter:
 
         return args
 
-    def _generate_mypy_args(self, target_paths: List[str], config: Dict[str, Any]) -> List[str]:
+    def _generate_mypy_args(
+        self, target_paths: List[str], config: Dict[str, Any]
+    ) -> List[str]:
         """Generate optimized MyPy arguments."""
         args = []
 
@@ -1338,7 +1393,9 @@ class DirectPixiExecutionAdapter:
 
         return args
 
-    def _generate_bandit_args(self, target_paths: List[str], config: Dict[str, Any]) -> List[str]:
+    def _generate_bandit_args(
+        self, target_paths: List[str], config: Dict[str, Any]
+    ) -> List[str]:
         """Generate optimized Bandit arguments."""
         args = ["-r"]  # Recursive by default
 
@@ -1351,7 +1408,9 @@ class DirectPixiExecutionAdapter:
 
         return args
 
-    def _generate_pytest_args(self, target_paths: List[str], config: Dict[str, Any]) -> List[str]:
+    def _generate_pytest_args(
+        self, target_paths: List[str], config: Dict[str, Any]
+    ) -> List[str]:
         """Generate optimized pytest arguments."""
         args = []
 
@@ -1374,7 +1433,7 @@ class DirectPixiExecutionAdapter:
         base_result: Dict[str, Any],
         quality_tool: str,
         env_info: QualityEnvironmentInfo,
-        start_time: float
+        start_time: float,
     ) -> Dict[str, Any]:
         """Enhance base execution result with quality intelligence."""
         enhanced_result = base_result.copy()
@@ -1387,7 +1446,7 @@ class DirectPixiExecutionAdapter:
             "environment_health": env_info.environment_health,
             "performance_indicators": env_info.performance_indicators,
             "execution_optimized": True,
-            "recommendations": env_info.recommendations[:3]  # Top 3 recommendations
+            "recommendations": env_info.recommendations[:3],  # Top 3 recommendations
         }
 
         # Linters exit 1 when they FIND issues (any other non-zero exit, or an
@@ -1427,10 +1486,7 @@ class DirectPixiExecutionAdapter:
         return 0
 
     def _parse_quality_output(
-        self,
-        quality_tool: str,
-        stdout: str,
-        stderr: str
+        self, quality_tool: str, stdout: str, stderr: str
     ) -> Dict[str, Any] | None:
         """Parse quality tool output for structured information."""
         try:
@@ -1453,44 +1509,40 @@ class DirectPixiExecutionAdapter:
     def _parse_ruff_output(self, output: str) -> Dict[str, Any]:
         """Parse Ruff JSON output."""
         try:
-            if output.strip().startswith('[') or output.strip().startswith('{'):
+            if output.strip().startswith("[") or output.strip().startswith("{"):
                 data = json.loads(output)
                 return {
                     "tool": "ruff",
                     "violations": data if isinstance(data, list) else [data],
-                    "violation_count": len(data) if isinstance(data, list) else 1
+                    "violation_count": len(data) if isinstance(data, list) else 1,
                 }
         except json.JSONDecodeError:
             pass
 
         # Fallback to text parsing
-        lines = output.strip().split('\n')
-        violations = [line for line in lines if line and not line.startswith('Found')]
+        lines = output.strip().split("\n")
+        violations = [line for line in lines if line and not line.startswith("Found")]
         return {
             "tool": "ruff",
             "violations": violations,
-            "violation_count": len(violations)
+            "violation_count": len(violations),
         }
 
     def _parse_mypy_output(self, output: str) -> Dict[str, Any]:
         """Parse MyPy output."""
-        lines = output.strip().split('\n')
-        errors = [line for line in lines if ': error:' in line]
-        return {
-            "tool": "mypy",
-            "type_errors": errors,
-            "error_count": len(errors)
-        }
+        lines = output.strip().split("\n")
+        errors = [line for line in lines if ": error:" in line]
+        return {"tool": "mypy", "type_errors": errors, "error_count": len(errors)}
 
     def _parse_bandit_output(self, output: str) -> Dict[str, Any]:
         """Parse Bandit JSON output."""
         try:
-            if output.strip().startswith('{'):
+            if output.strip().startswith("{"):
                 data = json.loads(output)
                 return {
                     "tool": "bandit",
                     "security_issues": data.get("results", []),
-                    "issue_count": len(data.get("results", []))
+                    "issue_count": len(data.get("results", [])),
                 }
         except json.JSONDecodeError:
             pass
@@ -1499,20 +1551,16 @@ class DirectPixiExecutionAdapter:
 
     def _parse_pytest_output(self, output: str) -> Dict[str, Any]:
         """Parse pytest output."""
-        lines = output.strip().split('\n')
-        summary_line = next((line for line in reversed(lines) if 'passed' in line or 'failed' in line), '')
+        lines = output.strip().split("\n")
+        summary_line = next(
+            (line for line in reversed(lines) if "passed" in line or "failed" in line),
+            "",
+        )
 
-        return {
-            "tool": "pytest",
-            "summary": summary_line,
-            "output_lines": len(lines)
-        }
+        return {"tool": "pytest", "summary": summary_line, "output_lines": len(lines)}
 
     def _optimize_tool_environment(
-        self,
-        tool_name: str,
-        working_dir: str,
-        env_info: QualityEnvironmentInfo
+        self, tool_name: str, working_dir: str, env_info: QualityEnvironmentInfo
     ) -> List[str]:
         """Apply specific optimizations for a tool."""
         optimizations = []
@@ -1534,13 +1582,13 @@ class DirectPixiExecutionAdapter:
         self,
         required_tools: List[str],
         env_info: QualityEnvironmentInfo,
-        working_dir: str
+        working_dir: str,
     ) -> Dict[str, Any]:
         """Apply global environment optimizations."""
         optimizations = {
             "parallel_execution": len(required_tools) > 1,
             "cache_optimization": True,
-            "resource_allocation": "optimal"
+            "resource_allocation": "optimal",
         }
 
         # Advanced cache optimization strategies
@@ -1576,7 +1624,9 @@ class DirectPixiExecutionAdapter:
         if env_info.environment_health == "suboptimal":
             performance_tuning.append("Consider upgrading tool versions")
         if len(env_info.available_tools) < 4:
-            performance_tuning.append("Install additional quality tools for comprehensive coverage")
+            performance_tuning.append(
+                "Install additional quality tools for comprehensive coverage"
+            )
 
         optimizations["performance_tuning"] = performance_tuning
 
@@ -1586,7 +1636,7 @@ class DirectPixiExecutionAdapter:
         self,
         env_info: QualityEnvironmentInfo,
         required_tools: List[str],
-        optimization_results: Dict[str, Any]
+        optimization_results: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Generate comprehensive optimization report."""
         return {
@@ -1594,28 +1644,47 @@ class DirectPixiExecutionAdapter:
                 "health_status": env_info.environment_health,
                 "tools_available": len(env_info.available_tools),
                 "tools_requested": len(required_tools),
-                "coverage_percentage": (len(env_info.available_tools) / len(required_tools)) * 100 if required_tools else 0
+                "coverage_percentage": (
+                    len(env_info.available_tools) / len(required_tools)
+                )
+                * 100
+                if required_tools
+                else 0,
             },
             "optimization_impact": {
-                "optimizations_applied_count": len(optimization_results["optimizations_applied"]),
-                "performance_improvements_count": len(optimization_results["performance_improvements"]),
-                "recommendations_generated": len(optimization_results["recommendations"])
+                "optimizations_applied_count": len(
+                    optimization_results["optimizations_applied"]
+                ),
+                "performance_improvements_count": len(
+                    optimization_results["performance_improvements"]
+                ),
+                "recommendations_generated": len(
+                    optimization_results["recommendations"]
+                ),
             },
             "performance_projection": {
-                "estimated_speedup": "20-40% faster execution" if len(required_tools) > 2 else "10-20% improvement",
-                "parallelization_benefit": "High" if len(required_tools) > 3 else "Medium",
-                "cache_benefit": "High" if any(tool in ["ruff", "mypy"] for tool in required_tools) else "Medium"
+                "estimated_speedup": "20-40% faster execution"
+                if len(required_tools) > 2
+                else "10-20% improvement",
+                "parallelization_benefit": "High"
+                if len(required_tools) > 3
+                else "Medium",
+                "cache_benefit": "High"
+                if any(tool in ["ruff", "mypy"] for tool in required_tools)
+                else "Medium",
             },
             "next_optimization_opportunities": [
                 "Consider tool-specific configuration tuning",
                 "Implement continuous environment health monitoring",
-                "Explore advanced caching strategies"
-            ]
+                "Explore advanced caching strategies",
+            ],
         }
 
     # Template generation methods
 
-    def _generate_ruff_template(self, target_pattern: str, output_format: str, task_type: str) -> QualityTaskTemplate:
+    def _generate_ruff_template(
+        self, target_pattern: str, output_format: str, task_type: str
+    ) -> QualityTaskTemplate:
         """Generate Ruff-specific task template."""
         if task_type == "fix":
             command = f"ruff check {target_pattern} --fix"
@@ -1637,10 +1706,12 @@ class DirectPixiExecutionAdapter:
             target_pattern=target_pattern,
             output_format=output_format,
             dependencies=["ruff"],
-            performance_hints={"cache_friendly": True, "parallel_safe": True}
+            performance_hints={"cache_friendly": True, "parallel_safe": True},
         )
 
-    def _generate_mypy_template(self, target_pattern: str, output_format: str, task_type: str) -> QualityTaskTemplate:
+    def _generate_mypy_template(
+        self, target_pattern: str, output_format: str, task_type: str
+    ) -> QualityTaskTemplate:
         """Generate MyPy-specific task template."""
         command = f"mypy {target_pattern}"
 
@@ -1655,10 +1726,12 @@ class DirectPixiExecutionAdapter:
             target_pattern=target_pattern,
             output_format=output_format,
             dependencies=["mypy"],
-            performance_hints={"cache_friendly": True, "incremental": True}
+            performance_hints={"cache_friendly": True, "incremental": True},
         )
 
-    def _generate_bandit_template(self, target_pattern: str, output_format: str, task_type: str) -> QualityTaskTemplate:
+    def _generate_bandit_template(
+        self, target_pattern: str, output_format: str, task_type: str
+    ) -> QualityTaskTemplate:
         """Generate Bandit-specific task template."""
         command = f"bandit -r {target_pattern}"
 
@@ -1673,10 +1746,12 @@ class DirectPixiExecutionAdapter:
             target_pattern=target_pattern,
             output_format=output_format,
             dependencies=["bandit"],
-            performance_hints={"security_focused": True}
+            performance_hints={"security_focused": True},
         )
 
-    def _generate_pytest_template(self, target_pattern: str, output_format: str, task_type: str) -> QualityTaskTemplate:
+    def _generate_pytest_template(
+        self, target_pattern: str, output_format: str, task_type: str
+    ) -> QualityTaskTemplate:
         """Generate pytest-specific task template."""
         command = "pytest"
 
@@ -1691,10 +1766,12 @@ class DirectPixiExecutionAdapter:
             target_pattern=target_pattern,
             output_format=output_format,
             dependencies=["pytest"],
-            performance_hints={"parallel_capable": True, "coverage_aware": True}
+            performance_hints={"parallel_capable": True, "coverage_aware": True},
         )
 
-    def _generate_generic_template(self, tool_name: str, target_pattern: str, output_format: str, task_type: str) -> QualityTaskTemplate:
+    def _generate_generic_template(
+        self, tool_name: str, target_pattern: str, output_format: str, task_type: str
+    ) -> QualityTaskTemplate:
         """Generate generic task template for unknown tools."""
         command = f"{tool_name} {target_pattern}"
 
@@ -1706,5 +1783,5 @@ class DirectPixiExecutionAdapter:
             target_pattern=target_pattern,
             output_format=output_format,
             dependencies=[tool_name],
-            performance_hints={"generic": True}
+            performance_hints={"generic": True},
         )

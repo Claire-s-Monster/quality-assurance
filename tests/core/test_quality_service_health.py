@@ -12,7 +12,9 @@ from unittest.mock import Mock
 from core.quality_service import QualityAssuranceService
 
 
-def _make_service(pixi_bin: str, working_dir: str = "/tmp/project") -> QualityAssuranceService:
+def _make_service(
+    pixi_bin: str, working_dir: str = "/tmp/project"
+) -> QualityAssuranceService:
     """Build a QualityAssuranceService with a fake quality_executor.pixi_executor."""
     pixi_executor = Mock()
     pixi_executor._pixi_bin = pixi_bin
@@ -24,7 +26,9 @@ def _make_service(pixi_bin: str, working_dir: str = "/tmp/project") -> QualityAs
 
     logging_port = Mock()
 
-    return QualityAssuranceService(quality_executor=quality_executor, logging=logging_port)
+    return QualityAssuranceService(
+        quality_executor=quality_executor, logging=logging_port
+    )
 
 
 class TestGetSystemHealthPixiProbe:
@@ -33,7 +37,9 @@ class TestGetSystemHealthPixiProbe:
     def test_unresolvable_pixi_reports_unhealthy_with_issue(self, tmp_path):
         """When the pixi binary cannot be resolved, healthy must be False
         and active_issues must name the problem, not silently report all-clear."""
-        service = _make_service(pixi_bin="/nonexistent/path/to/pixi", working_dir=str(tmp_path))
+        service = _make_service(
+            pixi_bin="/nonexistent/path/to/pixi", working_dir=str(tmp_path)
+        )
 
         health = service.get_system_health()
 
@@ -41,7 +47,9 @@ class TestGetSystemHealthPixiProbe:
         assert health.healthy is False
         assert len(health.active_issues) > 0
         assert any("pixi" in issue.lower() for issue in health.active_issues)
-        assert any("/nonexistent/path/to/pixi" in issue for issue in health.active_issues)
+        assert any(
+            "/nonexistent/path/to/pixi" in issue for issue in health.active_issues
+        )
 
     def test_resolvable_executable_pixi_reports_healthy(self, tmp_path):
         """When the pixi binary genuinely resolves to an executable file,
@@ -134,9 +142,5 @@ class TestGetSystemHealthPixiProbe:
 
         assert health.healthy is True
         assert health.quality_tools_available is True
-        assert any(
-            "dead-code-check" in rec for rec in health.recommendations
-        )
-        assert not any(
-            "dead-code" in issue.lower() for issue in health.active_issues
-        )
+        assert any("dead-code-check" in rec for rec in health.recommendations)
+        assert not any("dead-code" in issue.lower() for issue in health.active_issues)

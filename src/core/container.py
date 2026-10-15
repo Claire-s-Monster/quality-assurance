@@ -7,7 +7,6 @@ as the agent-cache server, ensuring consistent architecture for quality tools.
 
 import os
 from pathlib import Path
-from typing import Dict, Any
 
 from adapters.environment import EnvironmentAdapter
 from adapters.execution import PixiExecutionAdapter
@@ -28,7 +27,7 @@ from core.quality_orchestration_service import QualityOrchestrationService
 class Container:
     """
     Dependency injection container for the Quality Assurance server.
-    
+
     Manages all dependencies and provides a clean interface for
     service instantiation with proper configuration.
     """
@@ -47,40 +46,38 @@ class Container:
         self._adapters["environment"] = EnvironmentAdapter(
             working_dir=self._working_dir
         )
-        
+
         # Logging adapter
         self._adapters["logging"] = LoggingAdapter()
-        
+
         # Simple validation adapter
         self._adapters["validation"] = SimpleValidationAdapter()
-        
+
         # Pixi project adapter
         self._adapters["project"] = PixiProjectAdapter(
-            environment=self._adapters["environment"],
-            logging=self._adapters["logging"]
+            environment=self._adapters["environment"], logging=self._adapters["logging"]
         )
-        
+
         # Pixi execution adapter
         self._adapters["execution"] = PixiExecutionAdapter(
             environment=self._adapters["environment"],
             logging=self._adapters["logging"],
-            validation=self._adapters["validation"]
+            validation=self._adapters["validation"],
         )
-        
+
         # Direct pixi execution adapter
         self._adapters["direct_pixi"] = DirectPixiExecutionAdapter(
-            logging=self._adapters["logging"],
-            working_dir=self._working_dir
+            logging=self._adapters["logging"], working_dir=self._working_dir
         )
-        
+
         # Quality tool execution adapter
         self._adapters["quality_executor"] = QualityToolExecutionAdapter(
             direct_pixi_executor=self._adapters["direct_pixi"]
         )
-        
+
         # Quality analysis adapter
         self._adapters["quality_analyzer"] = QualityAnalysisAdapter()
-        
+
         # Quality data storage adapter. The trend analyzer shares this root so
         # baselines written through either adapter are visible to both
         # (<root>/baselines/<id>.json).
@@ -88,22 +85,21 @@ class Container:
         self._adapters["data_storage"] = QualityDataStorageAdapter(
             storage_root=quality_data_root
         )
-        
+
         # Git integration adapter
         self._adapters["git_integration"] = GitIntegrationAdapter(
-            working_dir=self._working_dir,
-            logging=self._adapters["logging"]
+            working_dir=self._working_dir, logging=self._adapters["logging"]
         )
-        
+
         # Quality trend analysis adapter (shares the data storage root)
         self._adapters["trend_analyzer"] = QualityTrendAnalysisAdapter(
             storage_path=quality_data_root
         )
-        
+
         # Automated fix adapter
         self._adapters["automated_fix"] = AutomatedFixAdapter(
             direct_pixi_executor=self._adapters["direct_pixi"],
-            working_dir=self._working_dir
+            working_dir=self._working_dir,
         )
 
     def _initialize_services(self) -> None:
@@ -111,9 +107,9 @@ class Container:
         # Core quality assurance service
         self._services["quality"] = QualityAssuranceService(
             quality_executor=self._adapters["quality_executor"],
-            logging=self._adapters["logging"]
+            logging=self._adapters["logging"],
         )
-        
+
         # Quality orchestration service (main business logic service)
         self._services["orchestration"] = QualityOrchestrationService(
             quality_executor=self._adapters["quality_executor"],
@@ -122,7 +118,7 @@ class Container:
             data_storage=self._adapters["data_storage"],
             git_integration=self._adapters["git_integration"],
             automated_fix=self._adapters["automated_fix"],
-            logging=self._adapters["logging"]
+            logging=self._adapters["logging"],
         )
 
     @property
@@ -144,7 +140,7 @@ class Container:
     def logging(self) -> LoggingAdapter:
         """Get the logging adapter."""
         return self._adapters["logging"]
-    
+
     @property
     def quality_executor(self) -> QualityToolExecutionAdapter:
         """Get the quality tool execution adapter."""
@@ -164,22 +160,22 @@ class Container:
     def quality_analyzer(self) -> QualityAnalysisAdapter:
         """Get the quality analysis adapter."""
         return self._adapters["quality_analyzer"]
-    
+
     @property
     def trend_analyzer(self) -> QualityTrendAnalysisAdapter:
         """Get the quality trend analysis adapter."""
         return self._adapters["trend_analyzer"]
-    
+
     @property
     def data_storage(self) -> QualityDataStorageAdapter:
         """Get the quality data storage adapter."""
         return self._adapters["data_storage"]
-    
+
     @property
     def git_integration(self) -> GitIntegrationAdapter:
         """Get the git integration adapter."""
         return self._adapters["git_integration"]
-    
+
     @property
     def automated_fix(self) -> AutomatedFixAdapter:
         """Get the automated fix adapter."""
@@ -196,7 +192,7 @@ class Container:
             for adapter in self._adapters.values():
                 if hasattr(adapter, "cleanup"):
                     adapter.cleanup()
-            
+
             self._adapters["logging"].log_info("Container cleanup completed")
         except Exception as e:
             print(f"Error during container cleanup: {e}")  # Fallback logging
