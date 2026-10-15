@@ -18,6 +18,7 @@ from core.models import (
     QualityViolation,
     SecurityIssue,
     ComplexityMetric,
+    DeadCodeResult,
     ExecutionStatus,
     ViolationSeverity,
     QualityMetrics,

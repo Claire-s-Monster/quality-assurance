@@ -175,6 +175,24 @@ src/utils.py:23: warning: Unused 'type: ignore' comment"""
         assert security_issue.file_path == "src/test.py"
         assert security_issue.line_number == 42
 
+    def test_parse_vulture_output(self, adapter):
+        """Vulture findings must parse into dead_code_results, not an ERROR result."""
+        vulture_output = (
+            "src/foo.py:12: unused function 'bar' (90% confidence)\n"
+            "src/baz.py:3: unused variable 'qux' (60% confidence)\n"
+        )
+
+        result = adapter.parse_tool_output(QualityTool.VULTURE, vulture_output, 3)
+
+        assert result.status != ExecutionStatus.ERROR
+        assert len(result.dead_code_results) == 2
+        first, second = result.dead_code_results
+        assert (first.file_path, first.line_number) == ("src/foo.py", 12)
+        assert (first.symbol_name, first.symbol_type) == ("bar", "function")
+        assert first.confidence == 90
+        assert first.used_outside_scope is False
+        assert second.used_outside_scope is True
+
     def test_parse_error_handling(self, adapter):
         """Test error handling in parse_tool_output."""
         # Invalid JSON should not crash - exit code 1 means FAILURE

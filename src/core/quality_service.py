@@ -7,7 +7,6 @@ tool execution, providing comprehensive code quality analysis capabilities.
 
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-import logging
 import os
 from pathlib import Path
 
