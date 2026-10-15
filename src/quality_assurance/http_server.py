@@ -228,11 +228,16 @@ class HTTPQualityAssuranceServer:
         # before connecting. Return 404 without JSON body so CC skips auth.
         @self.app.get("/.well-known/{path:path}")
         async def well_known_stub(path: str):
-            return JSONResponse(status_code=404, content={"error": "OAuth not supported"})
+            return JSONResponse(
+                status_code=404, content={"error": "OAuth not supported"}
+            )
 
         @self.app.api_route("/register", methods=["GET", "POST", "PUT", "DELETE"])
         async def register_stub():
-            return JSONResponse(status_code=404, content={"error": "Dynamic client registration not supported"})
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Dynamic client registration not supported"},
+            )
 
         @self.app.get("/mcp")
         async def handle_mcp_sse(

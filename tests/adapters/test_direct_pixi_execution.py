@@ -18,7 +18,9 @@ class TestRunTaskCommandConstruction:
 
     def _make_adapter(self) -> DirectPixiExecutionAdapter:
         logging_port = Mock()
-        adapter = DirectPixiExecutionAdapter(logging=logging_port, working_dir="/tmp/project")
+        adapter = DirectPixiExecutionAdapter(
+            logging=logging_port, working_dir="/tmp/project"
+        )
         adapter._is_pixi_project = Mock(return_value=True)
         adapter._get_available_tasks = Mock(return_value={"lint": "ruff check src/"})
         return adapter
@@ -57,7 +59,13 @@ class TestRunTaskCommandConstruction:
             called_command = mock_run.call_args[0][0]
             assert called_command[0] == adapter._pixi_bin
             assert called_command[0].endswith("pixi")
-            assert called_command[1:] == ["run", "--environment", "quality", "lint", "src/"]
+            assert called_command[1:] == [
+                "run",
+                "--environment",
+                "quality",
+                "lint",
+                "src/",
+            ]
 
             flag_index = called_command.index("--environment")
             task_index = called_command.index("lint")
@@ -75,7 +83,9 @@ class TestRunQualityTaskEnvironmentForwarding:
 
     def _make_adapter(self) -> DirectPixiExecutionAdapter:
         logging_port = Mock()
-        adapter = DirectPixiExecutionAdapter(logging=logging_port, working_dir="/tmp/project")
+        adapter = DirectPixiExecutionAdapter(
+            logging=logging_port, working_dir="/tmp/project"
+        )
         adapter._is_pixi_project = Mock(return_value=True)
         adapter._get_available_tasks = Mock(return_value={"lint": "ruff check src/"})
         env_info = Mock()
@@ -107,11 +117,18 @@ class TestRunQualityTaskEnvironmentForwarding:
                 task_name="lint",
                 quality_tool="ruff",
                 target_paths=["src/"],
-                environment="quality"
+                environment="quality",
             )
 
             called_command = mock_run.call_args[0][0]
-            assert called_command[1:] == ["run", "--environment", "quality", "lint", "check", "src/"]
+            assert called_command[1:] == [
+                "run",
+                "--environment",
+                "quality",
+                "lint",
+                "check",
+                "src/",
+            ]
             flag_index = called_command.index("--environment")
             task_index = called_command.index("lint")
             assert flag_index < task_index
@@ -124,9 +141,7 @@ class TestRunQualityTaskEnvironmentForwarding:
             mock_run.return_value = self._fake_completed_process()
 
             adapter.run_quality_task(
-                task_name="lint",
-                quality_tool="ruff",
-                target_paths=["src/"]
+                task_name="lint", quality_tool="ruff", target_paths=["src/"]
             )
 
             called_command = mock_run.call_args[0][0]
@@ -152,7 +167,9 @@ class TestFeatureScopedTaskDiscovery:
     def test_feature_scoped_task_found_with_matching_environment(self, tmp_path):
         """A task under [tool.pixi.feature.quality.tasks] is found when the
         requested environment activates the 'quality' feature."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
@@ -165,10 +182,13 @@ class TestFeatureScopedTaskDiscovery:
 
             [tool.pixi.environments]
             quality = {features = ["quality"]}
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
-        result = adapter.task_exists("lint", working_dir=str(tmp_path), environment="quality")
+        result = adapter.task_exists(
+            "lint", working_dir=str(tmp_path), environment="quality"
+        )
 
         assert result["exists"] is True
 
@@ -176,7 +196,9 @@ class TestFeatureScopedTaskDiscovery:
         """With no environment specified, the permissive union of all
         feature tasks is used so pixi -- not this pre-check -- is the final
         authority on task resolution/ambiguity."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
@@ -186,17 +208,22 @@ class TestFeatureScopedTaskDiscovery:
 
             [tool.pixi.environments]
             quality = {features = ["quality"]}
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
-        result = adapter.task_exists("lint", working_dir=str(tmp_path), environment=None)
+        result = adapter.task_exists(
+            "lint", working_dir=str(tmp_path), environment=None
+        )
 
         assert result["exists"] is True
 
     def test_feature_scoped_task_not_found_for_excluding_environment(self, tmp_path):
         """A feature-scoped task must NOT be found when the requested
         environment activates a different feature set that excludes it."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
@@ -210,17 +237,22 @@ class TestFeatureScopedTaskDiscovery:
             [tool.pixi.environments]
             quality = {features = ["quality"]}
             dev-only = {features = ["dev"]}
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
-        result = adapter.task_exists("lint", working_dir=str(tmp_path), environment="dev-only")
+        result = adapter.task_exists(
+            "lint", working_dir=str(tmp_path), environment="dev-only"
+        )
 
         assert result["exists"] is False
 
     def test_environment_entry_dict_form_parses_features(self, tmp_path):
         """[tool.pixi.environments] entries in dict form
         {features=[...], solve-group=...} are parsed correctly."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
@@ -230,17 +262,22 @@ class TestFeatureScopedTaskDiscovery:
 
             [tool.pixi.environments]
             quality = {features = ["quality"], solve-group = "default"}
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
-        result = adapter.task_exists("lint", working_dir=str(tmp_path), environment="quality")
+        result = adapter.task_exists(
+            "lint", working_dir=str(tmp_path), environment="quality"
+        )
 
         assert result["exists"] is True
 
     def test_environment_entry_bare_list_form_parses_features(self, tmp_path):
         """[tool.pixi.environments] entries in bare-list shorthand form
         (equivalent to {features=[...]}) are parsed correctly."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
@@ -250,17 +287,22 @@ class TestFeatureScopedTaskDiscovery:
 
             [tool.pixi.environments]
             quality = ["quality"]
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
-        result = adapter.task_exists("lint", working_dir=str(tmp_path), environment="quality")
+        result = adapter.task_exists(
+            "lint", working_dir=str(tmp_path), environment="quality"
+        )
 
         assert result["exists"] is True
 
     def test_top_level_task_still_found_no_regression(self, tmp_path):
         """Top-level [tool.pixi.tasks] entries remain discoverable alongside
         feature-scoped tasks, even when an environment filter is active."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
@@ -273,10 +315,13 @@ class TestFeatureScopedTaskDiscovery:
 
             [tool.pixi.environments]
             quality = {features = ["quality"]}
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
-        result = adapter.task_exists("build", working_dir=str(tmp_path), environment="quality")
+        result = adapter.task_exists(
+            "build", working_dir=str(tmp_path), environment="quality"
+        )
 
         assert result["exists"] is True
 
@@ -284,7 +329,9 @@ class TestFeatureScopedTaskDiscovery:
         """A pre-check must never be stricter than pixi itself: an
         unrecognized environment name falls back to the permissive union
         of all tasks rather than returning empty."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
@@ -294,7 +341,8 @@ class TestFeatureScopedTaskDiscovery:
 
             [tool.pixi.environments]
             quality = {features = ["quality"]}
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
         result = adapter.task_exists(
@@ -323,14 +371,17 @@ class TestResolveTaskName:
     def test_picks_conventional_alias_when_only_it_exists(self, tmp_path):
         """A manifest defining 'lint' but not 'ruff-check' must resolve the
         'ruff' tool to 'lint' (first, most-conventional candidate)."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
 
             [tool.pixi.tasks]
             lint = "ruff check src/"
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
         result = adapter.resolve_task_name("ruff", working_dir=str(tmp_path))
@@ -340,14 +391,17 @@ class TestResolveTaskName:
     def test_falls_back_to_later_alias_when_conventional_name_absent(self, tmp_path):
         """When only 'ruff-check' exists (no 'lint'), that alias must be
         picked instead of returning None."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
 
             [tool.pixi.tasks]
             ruff-check = "ruff check src/"
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
         result = adapter.resolve_task_name("ruff", working_dir=str(tmp_path))
@@ -356,14 +410,17 @@ class TestResolveTaskName:
 
     def test_returns_none_when_no_candidate_exists(self, tmp_path):
         """Neither 'lint', 'ruff-check', nor 'ruff' defined -> None, not a guess."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
 
             [tool.pixi.tasks]
             build = "echo build"
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
         result = adapter.resolve_task_name("ruff", working_dir=str(tmp_path))
@@ -374,7 +431,9 @@ class TestResolveTaskName:
         """A feature-scoped 'lint' task only resolves when the requested
         environment activates that feature; a differently-scoped
         environment must not see it."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
@@ -388,11 +447,16 @@ class TestResolveTaskName:
             [tool.pixi.environments]
             quality = {features = ["quality"]}
             dev-only = {features = ["dev"]}
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
-        found = adapter.resolve_task_name("ruff", working_dir=str(tmp_path), environment="quality")
-        not_found = adapter.resolve_task_name("ruff", working_dir=str(tmp_path), environment="dev-only")
+        found = adapter.resolve_task_name(
+            "ruff", working_dir=str(tmp_path), environment="quality"
+        )
+        not_found = adapter.resolve_task_name(
+            "ruff", working_dir=str(tmp_path), environment="dev-only"
+        )
 
         assert found == "lint"
         assert not_found is None
@@ -400,14 +464,17 @@ class TestResolveTaskName:
     def test_explicit_candidate_list_is_honored(self, tmp_path):
         """Passing an explicit list (instead of a known tool name) tries
         those candidates in order rather than consulting TOOL_TASK_ALIASES."""
-        self._write_pyproject(tmp_path, """
+        self._write_pyproject(
+            tmp_path,
+            """
             [project]
             name = "demo"
             version = "0.1.0"
 
             [tool.pixi.tasks]
             security = "bandit -r src/"
-        """)
+        """,
+        )
         adapter = self._make_adapter(tmp_path)
 
         result = adapter.resolve_task_name(
@@ -427,7 +494,9 @@ class TestTimeoutDurationDiagnostics:
 
     def _make_adapter(self) -> DirectPixiExecutionAdapter:
         logging_port = Mock()
-        adapter = DirectPixiExecutionAdapter(logging=logging_port, working_dir="/tmp/project")
+        adapter = DirectPixiExecutionAdapter(
+            logging=logging_port, working_dir="/tmp/project"
+        )
         adapter._is_pixi_project = Mock(return_value=True)
         adapter._get_available_tasks = Mock(return_value={"lint": "ruff check src/"})
         return adapter
@@ -445,12 +514,16 @@ class TestTimeoutDurationDiagnostics:
         adapter = self._make_adapter()
 
         with patch("adapters.direct_pixi_execution.subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="pixi run lint", timeout=300)
+            mock_run.side_effect = subprocess.TimeoutExpired(
+                cmd="pixi run lint", timeout=300
+            )
 
             result = adapter.run_task("lint", args=["src/"], timeout=300)
 
             assert result["success"] is False
-            assert "no duration baseline recorded for task 'lint' yet" in result["stderr"]
+            assert (
+                "no duration baseline recorded for task 'lint' yet" in result["stderr"]
+            )
             assert "likely blocked" not in result["stderr"]
 
     def test_timeout_with_fast_history_reports_median_ratio_and_blocked_claim(self):
@@ -462,10 +535,14 @@ class TestTimeoutDurationDiagnostics:
         with patch("adapters.direct_pixi_execution.subprocess.run") as mock_run:
             mock_run.return_value = self._fake_completed_process()
             for _ in range(10):
-                with patch("adapters.direct_pixi_execution.time.time", side_effect=[0.0, 0.3]):
+                with patch(
+                    "adapters.direct_pixi_execution.time.time", side_effect=[0.0, 0.3]
+                ):
                     adapter.run_task("lint", args=["src/"], timeout=300)
 
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="pixi run lint", timeout=300)
+            mock_run.side_effect = subprocess.TimeoutExpired(
+                cmd="pixi run lint", timeout=300
+            )
             mock_run.return_value = None
             result = adapter.run_task("lint", args=["src/"], timeout=300)
 
@@ -484,10 +561,14 @@ class TestTimeoutDurationDiagnostics:
         with patch("adapters.direct_pixi_execution.subprocess.run") as mock_run:
             mock_run.return_value = self._fake_completed_process()
             for _ in range(5):
-                with patch("adapters.direct_pixi_execution.time.time", side_effect=[0.0, 25.0]):
+                with patch(
+                    "adapters.direct_pixi_execution.time.time", side_effect=[0.0, 25.0]
+                ):
                     adapter.run_task("lint", args=["src/"], timeout=30)
 
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="pixi run lint", timeout=30)
+            mock_run.side_effect = subprocess.TimeoutExpired(
+                cmd="pixi run lint", timeout=30
+            )
             mock_run.return_value = None
             result = adapter.run_task("lint", args=["src/"], timeout=30)
 
@@ -503,7 +584,9 @@ class TestTimeoutDurationDiagnostics:
 
         with patch("adapters.direct_pixi_execution.subprocess.run") as mock_run:
             mock_run.return_value = self._fake_completed_process(returncode=1)
-            with patch("adapters.direct_pixi_execution.time.time", side_effect=[0.0, 0.5]):
+            with patch(
+                "adapters.direct_pixi_execution.time.time", side_effect=[0.0, 0.5]
+            ):
                 adapter.run_task("lint", args=["src/"], timeout=300)
 
             assert len(adapter._task_duration_history["lint"]) == 1
@@ -518,7 +601,9 @@ class TestTimeoutDurationDiagnostics:
             mock_run.return_value = self._fake_completed_process()
             maxlen = adapter._duration_history_maxlen
             for _ in range(maxlen + 15):
-                with patch("adapters.direct_pixi_execution.time.time", side_effect=[0.0, 0.1]):
+                with patch(
+                    "adapters.direct_pixi_execution.time.time", side_effect=[0.0, 0.1]
+                ):
                     adapter.run_task("lint", args=["src/"], timeout=300)
 
             assert len(adapter._task_duration_history["lint"]) == maxlen

@@ -56,20 +56,20 @@ def pixi_run_task(
     task_name: str,
     args: list[str] = [],
     working_dir: str | None = None,
-    timeout: int = 300
+    timeout: int = 300,
 ) -> dict[str, Any]:
     """
     Execute a pixi task with arguments.
     Essential for: pixi run test, pixi run lint, pixi run build, pixi run dev
-    
+
     Common usage that agents try to bypass:
-    - Instead of: Bash("pixi run test") 
+    - Instead of: Bash("pixi run test")
     - Use: pixi_run_task("test")
     - Instead of: Bash("pixi run lint --fix")
     - Use: pixi_run_task("lint", ["--fix"])
-    
+
     Returns: {"success": bool, "stdout": str, "stderr": str, "exit_code": int, "execution_time": float}
-    
+
     This function eliminates bash circumvention by providing direct, secure pixi task execution
     with proper working directory detection and environment activation.
     """
@@ -84,7 +84,7 @@ def pixi_run_task(
             "exit_code": 1,
             "execution_time": 0.0,
             "task_name": task_name,
-            "working_dir": working_dir or "current"
+            "working_dir": working_dir or "current",
         }
 
 
@@ -93,9 +93,9 @@ def pixi_list_tasks(working_dir: str | None = None) -> dict[str, Any]:
     """
     List all available pixi tasks with descriptions.
     Returns: {"tasks": {"test": "Run pytest", "lint": "Run ruff", ...}}
-    
+
     Critical for: Agent discovery of available tasks
-    
+
     Enables agents to programmatically discover what tasks are available in a pixi project,
     preventing failed task execution attempts and enabling intelligent workflow decisions.
     """
@@ -103,10 +103,7 @@ def pixi_list_tasks(working_dir: str | None = None) -> dict[str, Any]:
         return container.pixi_service.list_tasks(working_dir)
     except Exception as e:
         logger.error(f"Error in pixi_list_tasks: {e}")
-        return {
-            "tasks": {},
-            "error": f"Task discovery failed: {str(e)}"
-        }
+        return {"tasks": {}, "error": f"Task discovery failed: {str(e)}"}
 
 
 @app.tool()
@@ -114,9 +111,9 @@ def pixi_task_exists(task_name: str, working_dir: str | None = None) -> dict[str
     """
     Check if a pixi task exists before attempting to run it.
     Returns: {"exists": bool, "working_dir": str}
-    
+
     Prevents: Failed task execution attempts
-    
+
     Essential for agent validation before task execution, enabling graceful handling
     of missing tasks and better error messages.
     """
@@ -125,7 +122,7 @@ def pixi_task_exists(task_name: str, working_dir: str | None = None) -> dict[str
         return {
             "exists": exists,
             "task_name": task_name,
-            "working_dir": working_dir or "current"
+            "working_dir": working_dir or "current",
         }
     except Exception as e:
         logger.error(f"Error in pixi_task_exists: {e}")
@@ -133,7 +130,7 @@ def pixi_task_exists(task_name: str, working_dir: str | None = None) -> dict[str
             "exists": False,
             "task_name": task_name,
             "working_dir": working_dir or "current",
-            "error": str(e)
+            "error": str(e),
         }
 
 
@@ -142,9 +139,9 @@ def pixi_install(working_dir: str | None = None) -> dict[str, Any]:
     """
     Install/sync pixi environment and dependencies.
     Essential for: Environment setup, dependency resolution
-    
+
     Replaces: Bash("pixi install")
-    
+
     Provides safe, timeout-controlled environment installation with proper error handling
     and progress reporting. Critical for project setup and dependency synchronization.
     """
@@ -156,7 +153,7 @@ def pixi_install(working_dir: str | None = None) -> dict[str, Any]:
             "success": False,
             "stdout": "",
             "stderr": f"Install error: {str(e)}",
-            "execution_time": 0.0
+            "execution_time": 0.0,
         }
 
 
@@ -170,9 +167,9 @@ def pixi_info(working_dir: str | None = None) -> dict[str, Any]:
     """
     Get pixi project information and environment status.
     Returns: Environment path, Python version, dependencies, etc.
-    
+
     Critical for: Environment validation, troubleshooting
-    
+
     Provides comprehensive project status including environment state, dependency information,
     and configuration details essential for debugging and project management.
     """
@@ -180,10 +177,7 @@ def pixi_info(working_dir: str | None = None) -> dict[str, Any]:
         return container.pixi_service.get_info(working_dir)
     except Exception as e:
         logger.error(f"Error in pixi_info: {e}")
-        return {
-            "is_pixi_project": False,
-            "error": f"Project info failed: {str(e)}"
-        }
+        return {"is_pixi_project": False, "error": f"Project info failed: {str(e)}"}
 
 
 @app.tool()
@@ -191,19 +185,21 @@ def pixi_exec(
     command: list[str],
     working_dir: str | None = None,
     capture_output: bool = True,
-    timeout: int = 300
+    timeout: int = 300,
 ) -> dict[str, Any]:
     """
     Execute arbitrary command in pixi environment.
     Example: pixi_exec(["python", "-c", "import sys; print(sys.version)"])
-    
+
     For: Commands that need pixi environment but aren't tasks
-    
+
     Enables execution of arbitrary commands within the pixi environment context,
     providing access to environment-specific tools and configurations.
     """
     try:
-        return container.pixi_service.execute_command(command, working_dir, capture_output, timeout)
+        return container.pixi_service.execute_command(
+            command, working_dir, capture_output, timeout
+        )
     except Exception as e:
         logger.error(f"Error in pixi_exec: {e}")
         return {
@@ -212,7 +208,7 @@ def pixi_exec(
             "stderr": f"Execution error: {str(e)}",
             "exit_code": 1,
             "execution_time": 0.0,
-            "command": " ".join(command)
+            "command": " ".join(command),
         }
 
 
@@ -221,9 +217,9 @@ def pixi_project_status(working_dir: str | None = None) -> dict[str, Any]:
     """
     Get comprehensive project status.
     Returns: Lock file status, environment status, task availability
-    
+
     Essential for: Health checks and project validation
-    
+
     Provides complete project health assessment including environment sync status,
     dependency state, and configuration validation for troubleshooting and monitoring.
     """
@@ -236,7 +232,7 @@ def pixi_project_status(working_dir: str | None = None) -> dict[str, Any]:
             "is_healthy": False,
             "issues": [f"Status check failed: {str(e)}"],
             "recommendations": ["Verify pixi installation and project configuration"],
-            "error": str(e)
+            "error": str(e),
         }
 
 
@@ -250,36 +246,33 @@ def pixi_add_dependency(
     package: str,
     channel: str | None = None,
     is_dev: bool = False,
-    working_dir: str | None = None
+    working_dir: str | None = None,
 ) -> dict[str, Any]:
     """
     Add a dependency to pixi project.
     Example: pixi_add_dependency("pytest", "conda-forge")
-    
+
     Replaces: Bash("pixi add pytest")
-    
+
     Provides safe dependency addition with channel specification and development
     dependency support, ensuring proper project configuration management.
     """
     try:
-        return container.pixi_service.add_dependency(package, channel, is_dev, working_dir)
+        return container.pixi_service.add_dependency(
+            package, channel, is_dev, working_dir
+        )
     except Exception as e:
         logger.error(f"Error in pixi_add_dependency: {e}")
-        return {
-            "success": False,
-            "message": f"Failed to add dependency: {str(e)}"
-        }
+        return {"success": False, "message": f"Failed to add dependency: {str(e)}"}
 
 
 @app.tool()
 def pixi_remove_dependency(
-    package: str,
-    is_dev: bool = False,
-    working_dir: str | None = None
+    package: str, is_dev: bool = False, working_dir: str | None = None
 ) -> dict[str, Any]:
     """
     Remove a dependency from pixi project.
-    
+
     Provides safe dependency removal with proper error handling and project
     state validation, ensuring clean dependency management.
     """
@@ -287,10 +280,7 @@ def pixi_remove_dependency(
         return container.pixi_service.remove_dependency(package, is_dev, working_dir)
     except Exception as e:
         logger.error(f"Error in pixi_remove_dependency: {e}")
-        return {
-            "success": False,
-            "message": f"Failed to remove dependency: {str(e)}"
-        }
+        return {"success": False, "message": f"Failed to remove dependency: {str(e)}"}
 
 
 @app.tool()
@@ -298,9 +288,9 @@ def pixi_list_dependencies(working_dir: str | None = None) -> dict[str, Any]:
     """
     List all project dependencies with versions.
     Returns: {"dependencies": {"python": "3.12.*", "pytest": "^7.0"}, "dev_dependencies": {...}}
-    
+
     Essential for: Dependency analysis and project understanding
-    
+
     Provides comprehensive dependency information including production and development
     dependencies, channels, and version specifications for project analysis.
     """
@@ -311,7 +301,7 @@ def pixi_list_dependencies(working_dir: str | None = None) -> dict[str, Any]:
         return {
             "dependencies": {},
             "dev_dependencies": {},
-            "error": f"Dependencies listing failed: {str(e)}"
+            "error": f"Dependencies listing failed: {str(e)}",
         }
 
 
@@ -324,7 +314,7 @@ def pixi_list_dependencies(working_dir: str | None = None) -> dict[str, Any]:
 def pixi_init(path: str, template: str | None = None) -> dict[str, Any]:
     """
     Initialize a new pixi project.
-    
+
     Provides safe project initialization with optional template support,
     ensuring proper project structure and configuration setup.
     """
@@ -335,7 +325,7 @@ def pixi_init(path: str, template: str | None = None) -> dict[str, Any]:
         return {
             "success": False,
             "message": f"Project initialization failed: {str(e)}",
-            "project_path": path
+            "project_path": path,
         }
 
 
@@ -369,19 +359,19 @@ def get_server_health() -> dict[str, Any]:
     """Get pixi shell server health information."""
     try:
         status = container.pixi_service.get_project_status()
-        
+
         # Add server-specific health info
         status["server_status"] = "running"
         status["mcp_version"] = "0.1.0"
         status["security_model"] = "pixi_validation"
-        
+
         return status
     except Exception as e:
         logger.error(f"Error getting server health: {e}")
         return {
             "is_healthy": False,
             "server_status": "error",
-            "error": f"Health check failed: {str(e)}"
+            "error": f"Health check failed: {str(e)}",
         }
 
 
@@ -405,16 +395,16 @@ def main():
     import sys
     import argparse
     import os
-    
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Pixi Shell MCP Server")
     parser.add_argument(
-        "--repository", 
-        type=str, 
-        help="Working directory/repository path for pixi operations"
+        "--repository",
+        type=str,
+        help="Working directory/repository path for pixi operations",
     )
     args, unknown = parser.parse_known_args()
-    
+
     # Set working directory if provided
     if args.repository:
         if os.path.exists(args.repository):
@@ -422,37 +412,41 @@ def main():
             logger.info("Changed working directory to: %s", args.repository)
         else:
             logger.warning("Repository path does not exist: %s", args.repository)
-    
+
     # Check if we're running in test mode
     if "pytest" in sys.modules or "test" in sys.argv:
         logger.info("Running in test mode")
-    
+
     logger.info("Pixi Shell MCP Server starting...")
     logger.info("Working directory: %s", os.getcwd())
-    
+
     # Validate pixi installation
     try:
         status = container.pixi_service.get_project_status()
         if status.get("pixi_executable_found", False):
             logger.info("Pixi executable found and available")
         else:
-            logger.warning("Pixi executable not found - install pixi for full functionality")
-        
+            logger.warning(
+                "Pixi executable not found - install pixi for full functionality"
+            )
+
         if status.get("is_pixi_project", False):
             logger.info("Running in pixi project directory")
             tasks = container.pixi_service.list_tasks()
             task_count = len(tasks.get("tasks", {}))
             logger.info("Available pixi tasks: %d", task_count)
         else:
-            logger.info("Not in a pixi project directory - project commands will require path specification")
-            
+            logger.info(
+                "Not in a pixi project directory - project commands will require path specification"
+            )
+
     except Exception as e:
         logger.error("Failed to perform initial pixi check: %s", e)
         # Continue anyway - some functions might still work
-    
+
     logger.info("Pixi Shell MCP Server ready for secure task execution")
     logger.info("Security model: pixi task validation with argument sanitization")
-    
+
     app.run()
 
 

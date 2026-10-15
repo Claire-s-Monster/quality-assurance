@@ -31,21 +31,21 @@ class EnvironmentAdapter(EnvironmentPort):
             # Basic security checks
             if not path:
                 return False
-            
+
             # Prevent path traversal
             if ".." in path or path.startswith("/"):
                 return False
-            
+
             # Must be relative to current working directory
             full_path = os.path.join(self.working_dir, path)
             normalized_path = os.path.normpath(full_path)
-            
+
             # Ensure path doesn't escape working directory
             if not normalized_path.startswith(self.working_dir):
                 return False
-            
+
             return True
-            
+
         except Exception:
             return False
 
@@ -53,38 +53,36 @@ class EnvironmentAdapter(EnvironmentPort):
         """Check if pixi executable is available."""
         try:
             result = subprocess.run(
-                ["pixi", "--version"],
-                capture_output=True,
-                timeout=10
+                ["pixi", "--version"], capture_output=True, timeout=10
             )
             return result.returncode == 0
         except Exception:
             return False
-    
+
     def get_pixi_path(self) -> str | None:
         """Get path to pixi executable."""
         return shutil.which("pixi")
-    
+
     def get_pixi_executable_path(self) -> str | None:
         """Get the path to pixi executable."""
         return self.get_pixi_path()
-    
+
     def check_pixi_installed(self) -> bool:
         """Check if pixi is installed and available."""
         return self.check_pixi_available()
-    
+
     def get_environment_variables(self) -> dict[str, str]:
         """Get current environment variables."""
         return dict(os.environ)
-    
+
     def resolve_project_path(self, path: str | None = None) -> str:
         """Resolve project path, defaulting to current directory."""
         if path is None:
             return self.working_dir
-        
+
         if os.path.isabs(path):
             return path
-        
+
         return os.path.join(self.working_dir, path)
 
     def get_system_health(self) -> SystemHealth:
@@ -92,33 +90,37 @@ class EnvironmentAdapter(EnvironmentPort):
         try:
             # Check pixi availability
             pixi_available = self.check_pixi_available()
-            available_functions = 14 if pixi_available else 0  # Count of pixi MCP functions
-            
+            available_functions = (
+                14 if pixi_available else 0
+            )  # Count of pixi MCP functions
+
             # Basic resource checks
             resource_usage = self._get_resource_usage()
-            
+
             # Determine health status
             healthy = (
-                pixi_available and
-                resource_usage.get("disk_usage_percent", 0) < 90 and
-                resource_usage.get("load_average", 0) < 10.0
+                pixi_available
+                and resource_usage.get("disk_usage_percent", 0) < 90
+                and resource_usage.get("load_average", 0) < 10.0
             )
-            
+
             security_alerts = []
             if not pixi_available:
-                security_alerts.append("Pixi executable not found - install pixi for functionality")
-            
+                security_alerts.append(
+                    "Pixi executable not found - install pixi for functionality"
+                )
+
             return SystemHealth(
                 healthy=healthy,
                 available_functions=available_functions,
                 recent_executions=0,  # Would be tracked by metrics
-                error_rate=0.0,       # Would be calculated from execution history
+                error_rate=0.0,  # Would be calculated from execution history
                 average_response_time=0.05,  # Estimated
                 security_alerts=security_alerts,
                 resource_usage=resource_usage,
-                last_health_check=f"{time.time():.6f}"
+                last_health_check=f"{time.time():.6f}",
             )
-            
+
         except Exception as e:
             return SystemHealth(
                 healthy=False,
@@ -128,13 +130,13 @@ class EnvironmentAdapter(EnvironmentPort):
                 average_response_time=0.0,
                 security_alerts=[f"Health check failed: {str(e)}"],
                 resource_usage={},
-                last_health_check=f"{time.time():.6f}"
+                last_health_check=f"{time.time():.6f}",
             )
 
     def _get_resource_usage(self) -> dict[str, Any]:
         """Get basic system resource usage."""
         resource_usage = {}
-        
+
         try:
             # Load average
             if os.path.exists("/proc/loadavg"):
@@ -143,18 +145,20 @@ class EnvironmentAdapter(EnvironmentPort):
                     resource_usage["load_average"] = load_avg
         except Exception:
             resource_usage["load_average"] = 0.0
-        
+
         try:
             # Disk usage
             statvfs = os.statvfs(self.working_dir)
             total_space = statvfs.f_frsize * statvfs.f_blocks
             free_space = statvfs.f_frsize * statvfs.f_available
             used_space = total_space - free_space
-            disk_usage_percent = (used_space / total_space * 100) if total_space > 0 else 0
+            disk_usage_percent = (
+                (used_space / total_space * 100) if total_space > 0 else 0
+            )
             resource_usage["disk_usage_percent"] = disk_usage_percent
         except Exception:
             resource_usage["disk_usage_percent"] = 0.0
-        
+
         try:
             # Memory usage
             if os.path.exists("/proc/meminfo"):
@@ -167,5 +171,5 @@ class EnvironmentAdapter(EnvironmentPort):
                             break
         except Exception:
             resource_usage["memory_available_mb"] = 0
-        
+
         return resource_usage

@@ -30,11 +30,11 @@ class TestQualityBaselineIntegration:
     def test_container_initialization_with_new_adapters(self, container):
         """Test that container properly initializes all new adapters."""
         # Check that all required adapters are available
-        assert hasattr(container, 'data_storage')
-        assert hasattr(container, 'git_integration')
+        assert hasattr(container, "data_storage")
+        assert hasattr(container, "git_integration")
         assert container.data_storage is not None
         assert container.git_integration is not None
-        
+
         # Check orchestration service has the new adapters
         orchestration_service = container.orchestration_service
         assert orchestration_service.data_storage is not None
@@ -43,32 +43,38 @@ class TestQualityBaselineIntegration:
     def test_baseline_establishment_with_git_integration(self, container):
         """Test baseline establishment with automatic git metadata detection."""
         orchestration_service = container.orchestration_service
-        
+
         # Mock git integration to return sample git data
         mock_git_metadata = {
-            'is_git_repo': True,
-            'commit_hash': 'abc123def456',
-            'current_branch': 'main',
-            'is_clean': True
+            "is_git_repo": True,
+            "commit_hash": "abc123def456",
+            "current_branch": "main",
+            "is_clean": True,
         }
-        
-        with patch.object(orchestration_service.git_integration, 'get_git_metadata', return_value=mock_git_metadata), \
-             patch.object(orchestration_service, 'execute_comprehensive_suite') as mock_suite:
-            
+
+        with (
+            patch.object(
+                orchestration_service.git_integration,
+                "get_git_metadata",
+                return_value=mock_git_metadata,
+            ),
+            patch.object(
+                orchestration_service, "execute_comprehensive_suite"
+            ) as mock_suite,
+        ):
             # Mock suite execution
             mock_suite.return_value = MagicMock()
             mock_suite.return_value.individual_results = []
-            
+
             try:
                 baseline = orchestration_service.establish_quality_baseline(
-                    project_name="test-project",
-                    project_version="1.0.0"
+                    project_name="test-project", project_version="1.0.0"
                 )
-                
+
                 # Check that git information was auto-detected
-                assert baseline.git_commit == 'abc123def456'
-                assert baseline.git_branch == 'main'
-                
+                assert baseline.git_commit == "abc123def456"
+                assert baseline.git_branch == "main"
+
             except Exception as e:
                 # Some parts might fail due to mocking limitations, but we should at least
                 # get to the point where git metadata is detected
@@ -78,11 +84,11 @@ class TestQualityBaselineIntegration:
         """Test that baselines are properly stored using the data storage adapter."""
         orchestration_service = container.orchestration_service
         data_storage = container.data_storage
-        
+
         # Create a mock baseline
         from core.models import QualityBaseline, QualityMetrics
         from datetime import UTC, datetime, timedelta
-        
+
         baseline = QualityBaseline(
             baseline_id="integration-test-baseline",
             project_name="test-project",
@@ -101,17 +107,17 @@ class TestQualityBaselineIntegration:
                 total_lines=1000,
                 code_lines=800,
                 comment_lines=150,
-                blank_lines=50
+                blank_lines=50,
             ),
             tool_versions={"ruff": "0.1.0"},
             python_version="3.11.0",
-            pixi_environment={}
+            pixi_environment={},
         )
-        
+
         # Test storage
         result = data_storage.store_baseline(baseline)
         assert result.success is True
-        
+
         # Test retrieval
         retrieved = data_storage.retrieve_baseline("integration-test-baseline")
         assert retrieved is not None
@@ -122,18 +128,18 @@ class TestQualityBaselineIntegration:
         """Test trend analysis integration with data storage."""
         trend_analyzer = container.trend_analyzer
         data_storage = container.data_storage
-        
+
         # Create multiple test baselines
         from core.models import QualityBaseline, QualityMetrics
         from datetime import UTC, datetime, timedelta
-        
+
         baselines = []
         for i in range(3):
             baseline = QualityBaseline(
                 baseline_id=f"trend-test-baseline-{i}",
                 project_name="trend-test-project",
                 project_version=f"1.0.{i}",
-                created_at=(datetime.now(UTC) - timedelta(days=i*2)).isoformat(),
+                created_at=(datetime.now(UTC) - timedelta(days=i * 2)).isoformat(),
                 expires_at=(datetime.now(UTC) + timedelta(days=365)).isoformat(),
                 retention_days=365,
                 tags=[f"trend-test-{i}"],
@@ -147,53 +153,54 @@ class TestQualityBaselineIntegration:
                     total_lines=1000 + i * 100,
                     code_lines=800 + i * 80,
                     comment_lines=150,
-                    blank_lines=50
+                    blank_lines=50,
                 ),
                 tool_versions={"ruff": "0.1.0"},
                 python_version="3.11.0",
-                pixi_environment={}
+                pixi_environment={},
             )
-            
+
             baselines.append(baseline)
-            
+
             # Store each baseline
             result = data_storage.store_baseline(baseline)
             assert result.success is True
-        
+
         # Test trend analysis
         baseline_ids = [b.baseline_id for b in baselines]
-        trend_analysis = trend_analyzer.analyze_quality_trends(baseline_ids, time_window_days=7)
-        
+        trend_analysis = trend_analyzer.analyze_quality_trends(
+            baseline_ids, time_window_days=7
+        )
+
         # Should find all baselines
-        assert trend_analysis['baselines_analyzed'] == 3
-        assert 'quality_trends' in trend_analysis
-        assert 'overall_scores' in trend_analysis['quality_trends']
+        assert trend_analysis["baselines_analyzed"] == 3
+        assert "quality_trends" in trend_analysis
+        assert "overall_scores" in trend_analysis["quality_trends"]
 
     def test_git_integration_validation(self, container):
         """Test git integration validation functionality."""
         git_integration = container.git_integration
-        
+
         # Test validation for baseline establishment
-        with patch.object(git_integration, 'get_git_metadata') as mock_git:
-            mock_git.return_value = {
-                'is_git_repo': False,
-                'git_available': True
-            }
-            
+        with patch.object(git_integration, "get_git_metadata") as mock_git:
+            mock_git.return_value = {"is_git_repo": False, "git_available": True}
+
             validation = git_integration.validate_git_state_for_baseline()
-            
-            assert validation['is_valid'] is True  # Still valid, just with warnings
-            assert len(validation['warnings']) > 0
-            assert any('Not a git repository' in warning for warning in validation['warnings'])
+
+            assert validation["is_valid"] is True  # Still valid, just with warnings
+            assert len(validation["warnings"]) > 0
+            assert any(
+                "Not a git repository" in warning for warning in validation["warnings"]
+            )
 
     def test_data_storage_export_import_cycle(self, container):
         """Test complete export/import cycle."""
         data_storage = container.data_storage
-        
+
         # Create and store a test baseline
         from core.models import QualityBaseline, QualityMetrics
         from datetime import UTC, datetime, timedelta
-        
+
         original_baseline = QualityBaseline(
             baseline_id="export-import-test",
             project_name="export-test-project",
@@ -212,52 +219,52 @@ class TestQualityBaselineIntegration:
                 total_lines=1500,
                 code_lines=1200,
                 comment_lines=200,
-                blank_lines=100
+                blank_lines=100,
             ),
             tool_versions={"ruff": "0.1.0", "mypy": "1.5.0"},
             python_version="3.11.0",
-            pixi_environment={"test": "value"}
+            pixi_environment={"test": "value"},
         )
-        
+
         # Store baseline
         result = data_storage.store_baseline(original_baseline)
         assert result.success is True
-        
+
         # Export data
         export_result = data_storage.export_baseline_data(
             project_name="export-test-project",
             export_format="json",
-            include_assessments=False
+            include_assessments=False,
         )
         assert export_result.success is True
-        
+
         # Verify export file exists and contains data
         import json
         from pathlib import Path
-        
-        export_file = Path(export_result.details['export_file'])
+
+        export_file = Path(export_result.details["export_file"])
         assert export_file.exists()
-        
-        with open(export_file, 'r') as f:
+
+        with open(export_file, "r") as f:
             export_data = json.load(f)
-        
-        assert 'baselines' in export_data
-        assert len(export_data['baselines']) >= 1
-        
+
+        assert "baselines" in export_data
+        assert len(export_data["baselines"]) >= 1
+
         # Find our baseline in the export
         found_baseline = None
-        for baseline_data in export_data['baselines']:
-            if baseline_data.get('baseline_id') == 'export-import-test':
+        for baseline_data in export_data["baselines"]:
+            if baseline_data.get("baseline_id") == "export-import-test":
                 found_baseline = baseline_data
                 break
-        
+
         assert found_baseline is not None
-        assert found_baseline['project_name'] == 'export-test-project'
+        assert found_baseline["project_name"] == "export-test-project"
 
     def test_error_handling_integration(self, container):
         """Test error handling in integrated components."""
         orchestration_service = container.orchestration_service
-        
+
         # Test handling of missing baseline
         # The service contract is to raise RuntimeError on any failure (the MCP
         # tool layer converts it into an error payload); it must name the
@@ -268,6 +275,6 @@ class TestQualityBaselineIntegration:
                 suite_configuration=QualitySuiteConfiguration(
                     included_tools=[QualityTool.RUFF],
                     parallel_execution=False,
-                    quality_threshold=7.0
-                )
+                    quality_threshold=7.0,
+                ),
             )

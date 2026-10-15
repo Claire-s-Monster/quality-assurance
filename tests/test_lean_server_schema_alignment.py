@@ -38,16 +38,14 @@ class TestLeanServerSchemaAlignment:
     def main_server_module(self):
         """Get the main server module."""
         from quality_assurance import server as main_server
+
         return main_server
 
     def _get_function_parameters(self, func) -> Set[str]:
         """Extract parameter names from a function signature."""
         sig = inspect.signature(func)
         # Exclude 'self' for methods
-        return {
-            name for name in sig.parameters.keys()
-            if name != 'self'
-        }
+        return {name for name in sig.parameters.keys() if name != "self"}
 
     def _get_schema_properties(self, schema: Dict[str, Any]) -> Set[str]:
         """Extract property names from a JSON schema."""
@@ -82,7 +80,7 @@ class TestLeanServerSchemaAlignment:
 
                 if not isinstance(tool_obj, FunctionTool):
                     not_function_tools.append(tool_name)
-                elif not hasattr(tool_obj, 'fn'):
+                elif not hasattr(tool_obj, "fn"):
                     missing_fn_attr.append(tool_name)
 
         assert not not_function_tools, f"Not FunctionTool: {not_function_tools}"
@@ -97,7 +95,7 @@ class TestLeanServerSchemaAlignment:
         for tool_name in lean_server_registry.keys():
             if hasattr(main_server_module, tool_name):
                 tool_obj = getattr(main_server_module, tool_name)
-                if hasattr(tool_obj, 'fn'):
+                if hasattr(tool_obj, "fn"):
                     if not callable(tool_obj.fn):
                         not_callable.append(tool_name)
 
@@ -114,7 +112,7 @@ class TestLeanServerSchemaAlignment:
                 continue
 
             tool_obj = getattr(main_server_module, tool_name)
-            if not hasattr(tool_obj, 'fn'):
+            if not hasattr(tool_obj, "fn"):
                 continue
 
             # Get schema properties
@@ -128,13 +126,15 @@ class TestLeanServerSchemaAlignment:
             in_func_not_schema = func_params - schema_props
 
             if in_schema_not_func or in_func_not_schema:
-                mismatches.append({
-                    "tool": tool_name,
-                    "in_schema_not_function": list(in_schema_not_func),
-                    "in_function_not_schema": list(in_func_not_schema),
-                    "schema_properties": list(schema_props),
-                    "function_parameters": list(func_params),
-                })
+                mismatches.append(
+                    {
+                        "tool": tool_name,
+                        "in_schema_not_function": list(in_schema_not_func),
+                        "in_function_not_schema": list(in_func_not_schema),
+                        "schema_properties": list(schema_props),
+                        "function_parameters": list(func_params),
+                    }
+                )
 
         if mismatches:
             report = "\n\nSchema/Function Parameter Mismatches:\n"
@@ -143,9 +143,9 @@ class TestLeanServerSchemaAlignment:
                 report += f"\nTool: {m['tool']}\n"
                 report += f"  Schema properties:    {m['schema_properties']}\n"
                 report += f"  Function parameters:  {m['function_parameters']}\n"
-                if m['in_schema_not_function']:
+                if m["in_schema_not_function"]:
                     report += f"  ❌ In schema but NOT in function: {m['in_schema_not_function']}\n"
-                if m['in_function_not_schema']:
+                if m["in_function_not_schema"]:
                     report += f"  ⚠️  In function but NOT in schema: {m['in_function_not_schema']}\n"
 
             pytest.fail(report)
@@ -173,7 +173,9 @@ class TestLeanServerSchemaAlignment:
             except Exception as e:
                 invocation_errors.append(f"{tool_name}: {e}")
 
-        assert not invocation_errors, f"Invocation errors:\n" + "\n".join(invocation_errors)
+        assert not invocation_errors, f"Invocation errors:\n" + "\n".join(
+            invocation_errors
+        )
 
 
 class TestSchemaAlignmentReport:
@@ -204,14 +206,14 @@ class TestSchemaAlignmentReport:
 
             tool_obj = getattr(main_server, tool_name)
 
-            if not hasattr(tool_obj, 'fn'):
+            if not hasattr(tool_obj, "fn"):
                 print(f"\n❌ {tool_name}")
                 print(f"   ERROR: Not a FunctionTool (no .fn attribute)")
                 all_passed = False
                 continue
 
             sig = inspect.signature(tool_obj.fn)
-            func_params = {n for n in sig.parameters.keys() if n != 'self'}
+            func_params = {n for n in sig.parameters.keys() if n != "self"}
 
             in_schema_not_func = schema_props - func_params
             in_func_not_schema = func_params - schema_props
@@ -221,9 +223,13 @@ class TestSchemaAlignmentReport:
                 print(f"   Schema:   {sorted(schema_props)}")
                 print(f"   Function: {sorted(func_params)}")
                 if in_schema_not_func:
-                    print(f"   ⛔ Schema declares but function doesn't accept: {in_schema_not_func}")
+                    print(
+                        f"   ⛔ Schema declares but function doesn't accept: {in_schema_not_func}"
+                    )
                 if in_func_not_schema:
-                    print(f"   ⚠️  Function accepts but schema doesn't declare: {in_func_not_schema}")
+                    print(
+                        f"   ⚠️  Function accepts but schema doesn't declare: {in_func_not_schema}"
+                    )
                 all_passed = False
             else:
                 print(f"\n✅ {tool_name}")
@@ -245,10 +251,10 @@ class TestAdapterAlignment:
 
     # Map server function names to adapter method names
     SERVER_TO_ADAPTER_MAP = {
-        'quality_execute_lint_assessment': 'execute_lint_assessment',
-        'quality_execute_typecheck_assessment': 'execute_typecheck_assessment',
-        'quality_execute_security_scan': 'execute_security_scan',
-        'quality_execute_complexity_analysis': 'execute_complexity_analysis',
+        "quality_execute_lint_assessment": "execute_lint_assessment",
+        "quality_execute_typecheck_assessment": "execute_typecheck_assessment",
+        "quality_execute_security_scan": "execute_security_scan",
+        "quality_execute_complexity_analysis": "execute_complexity_analysis",
     }
 
     def test_adapter_methods_exist(self):
@@ -275,28 +281,30 @@ class TestAdapterAlignment:
                 continue
 
             tool_obj = getattr(main_server, server_func_name)
-            if not hasattr(tool_obj, 'fn'):
+            if not hasattr(tool_obj, "fn"):
                 continue
 
             server_sig = inspect.signature(tool_obj.fn)
-            server_params = {n for n in server_sig.parameters.keys() if n != 'self'}
+            server_params = {n for n in server_sig.parameters.keys() if n != "self"}
 
             # Get adapter method params
             adapter_method = getattr(QualityToolExecutionAdapter, adapter_method_name)
             adapter_sig = inspect.signature(adapter_method)
-            adapter_params = {n for n in adapter_sig.parameters.keys() if n != 'self'}
+            adapter_params = {n for n in adapter_sig.parameters.keys() if n != "self"}
 
             # Check key params that server passes are accepted by adapter
             # Note: adapter may have additional params with defaults
-            critical_server_params = {'tool', 'target_path'}
+            critical_server_params = {"tool", "target_path"}
             missing_in_adapter = critical_server_params - adapter_params
 
             if missing_in_adapter:
-                mismatches.append({
-                    'server_func': server_func_name,
-                    'adapter_method': adapter_method_name,
-                    'missing': missing_in_adapter,
-                })
+                mismatches.append(
+                    {
+                        "server_func": server_func_name,
+                        "adapter_method": adapter_method_name,
+                        "missing": missing_in_adapter,
+                    }
+                )
 
         if mismatches:
             msg = "\nAdapter signature mismatches:\n"

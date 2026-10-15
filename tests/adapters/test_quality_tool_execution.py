@@ -39,7 +39,9 @@ class _FakePixiExecutor:
 
     def resolve_task_name(self, tool_or_candidates, working_dir=None, environment=None):
         if isinstance(tool_or_candidates, str):
-            candidates = list(TOOL_TASK_ALIASES.get(tool_or_candidates, (tool_or_candidates,)))
+            candidates = list(
+                TOOL_TASK_ALIASES.get(tool_or_candidates, (tool_or_candidates,))
+            )
         else:
             candidates = list(tool_or_candidates)
         for candidate in candidates:
@@ -53,7 +55,9 @@ class _FakePixiExecutor:
     def list_tasks(self, working_dir=None):
         return {"tasks": dict(self._available_tasks)}
 
-    def run_task(self, task_name, args=None, timeout=300, working_dir=None, environment=None):
+    def run_task(
+        self, task_name, args=None, timeout=300, working_dir=None, environment=None
+    ):
         return dict(self._run_result)
 
 
@@ -62,7 +66,9 @@ class TestSecurityScanTaskResolution:
     not the old hardcoded "security" name."""
 
     def test_resolves_security_scan_alias_when_only_it_exists(self):
-        pixi_executor = _FakePixiExecutor(available_tasks={"security-scan": "bandit -r src/"})
+        pixi_executor = _FakePixiExecutor(
+            available_tasks={"security-scan": "bandit -r src/"}
+        )
         adapter = QualityToolExecutionAdapter(direct_pixi_executor=pixi_executor)
 
         result = adapter.execute_security_scan(project_path="/tmp/project")

@@ -43,10 +43,14 @@ class _FakePixiAdapter:
 
     def __init__(self, run_results: dict, available_tools: set):
         self._run_results = run_results
-        self.detect_quality_environment = Mock(return_value=_FakeEnvInfo(available_tools))
+        self.detect_quality_environment = Mock(
+            return_value=_FakeEnvInfo(available_tools)
+        )
         self.optimize_quality_environment = Mock(return_value={})
         self.generate_quality_task_template = Mock(
-            side_effect=lambda tool_name, target_pattern: _FakeTemplate(f"{tool_name}-task")
+            side_effect=lambda tool_name, target_pattern: _FakeTemplate(
+                f"{tool_name}-task"
+            )
         )
         # Neither the template's own name nor the tool's alias candidates
         # resolve in this fake project -- irrelevant to execution_summary
@@ -88,7 +92,9 @@ class TestPixiAwareExecutionSummaryAccounting:
         }
         fake_pixi_adapter = _FakePixiAdapter(run_results, available_tools={"ruff"})
         monkeypatch.setattr(main_server_module, "orchestration_service", object())
-        monkeypatch.setattr(main_server_module, "container", _FakeContainer(fake_pixi_adapter))
+        monkeypatch.setattr(
+            main_server_module, "container", _FakeContainer(fake_pixi_adapter)
+        )
 
         result = main_server_module.quality_execute_pixi_aware_assessment.fn(
             tools=["ruff"], project_path=str(tmp_path)
@@ -100,7 +106,9 @@ class TestPixiAwareExecutionSummaryAccounting:
         assert summary["tools_executed"] == 0
         assert summary["tools_unavailable"] == 0
         assert (
-            summary["tools_failed"] + summary["tools_executed"] + summary["tools_unavailable"]
+            summary["tools_failed"]
+            + summary["tools_executed"]
+            + summary["tools_unavailable"]
             == summary["tools_requested"]
         )
 
@@ -127,9 +135,13 @@ class TestPixiAwareExecutionSummaryAccounting:
                 "quality_intelligence": {"tool_name": "mypy"},
             },
         }
-        fake_pixi_adapter = _FakePixiAdapter(run_results, available_tools={"ruff", "mypy"})
+        fake_pixi_adapter = _FakePixiAdapter(
+            run_results, available_tools={"ruff", "mypy"}
+        )
         monkeypatch.setattr(main_server_module, "orchestration_service", object())
-        monkeypatch.setattr(main_server_module, "container", _FakeContainer(fake_pixi_adapter))
+        monkeypatch.setattr(
+            main_server_module, "container", _FakeContainer(fake_pixi_adapter)
+        )
 
         result = main_server_module.quality_execute_pixi_aware_assessment.fn(
             tools=["ruff", "mypy"], project_path=str(tmp_path)
@@ -141,7 +153,9 @@ class TestPixiAwareExecutionSummaryAccounting:
         assert summary["tools_executed"] == 1
         assert summary["tools_unavailable"] == 0
         assert (
-            summary["tools_failed"] + summary["tools_executed"] + summary["tools_unavailable"]
+            summary["tools_failed"]
+            + summary["tools_executed"]
+            + summary["tools_unavailable"]
             == summary["tools_requested"]
         )
 
@@ -163,7 +177,9 @@ class TestPixiAwareExecutionSummaryAccounting:
         }
         fake_pixi_adapter = _FakePixiAdapter(run_results, available_tools={"ruff"})
         monkeypatch.setattr(main_server_module, "orchestration_service", object())
-        monkeypatch.setattr(main_server_module, "container", _FakeContainer(fake_pixi_adapter))
+        monkeypatch.setattr(
+            main_server_module, "container", _FakeContainer(fake_pixi_adapter)
+        )
 
         result = main_server_module.quality_execute_pixi_aware_assessment.fn(
             tools=["ruff"], project_path=str(tmp_path)
@@ -189,7 +205,9 @@ class TestPixiAwareExecutionSummaryAccounting:
         }
         fake_pixi_adapter = _FakePixiAdapter(run_results, available_tools={"mypy"})
         monkeypatch.setattr(main_server_module, "orchestration_service", object())
-        monkeypatch.setattr(main_server_module, "container", _FakeContainer(fake_pixi_adapter))
+        monkeypatch.setattr(
+            main_server_module, "container", _FakeContainer(fake_pixi_adapter)
+        )
 
         result = main_server_module.quality_execute_pixi_aware_assessment.fn(
             tools=["mypy"], project_path=str(tmp_path)
