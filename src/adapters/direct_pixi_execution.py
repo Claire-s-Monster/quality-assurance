@@ -1390,15 +1390,41 @@ class DirectPixiExecutionAdapter:
             "recommendations": env_info.recommendations[:3]  # Top 3 recommendations
         }
 
-        # Add parsed output if possible
-        if enhanced_result["success"] and enhanced_result["stdout"]:
+        # Linters exit 1 when they FIND issues (any other non-zero exit, or an
+        # "error" key, means the tool did not run). Such a run stays
+        # success=False but its parsed counts are kept -- only when the output
+        # really parses to findings, so a crash is never read as a result.
+        exit_code = enhanced_result.get("exit_code")
+        found_issues = (
+            not enhanced_result["success"]
+            and exit_code == 1
+            and not enhanced_result.get("error")
+        )
+
+        if (enhanced_result["success"] or found_issues) and enhanced_result["stdout"]:
             parsed_output = self._parse_quality_output(
                 quality_tool, enhanced_result["stdout"], enhanced_result["stderr"]
             )
-            if parsed_output:
+            if parsed_output and found_issues:
+                if self._parsed_finding_count(parsed_output) > 0:
+                    enhanced_result["parsed_output"] = parsed_output
+                    enhanced_result["findings_detected"] = True
+            elif parsed_output:
                 enhanced_result["parsed_output"] = parsed_output
 
         return enhanced_result
+
+    @staticmethod
+    def _parsed_finding_count(parsed_output: Dict[str, Any]) -> int:
+        """Number of genuinely parsed findings; 0 when the output did not parse
+        into structured findings (e.g. ruff's text fallback, bandit raw_output)."""
+        violations = parsed_output.get("violations")
+        if violations is not None and not all(isinstance(v, dict) for v in violations):
+            return 0
+        for key in ("violation_count", "error_count", "issue_count"):
+            if key in parsed_output:
+                return parsed_output[key]
+        return 0
 
     def _parse_quality_output(
         self,

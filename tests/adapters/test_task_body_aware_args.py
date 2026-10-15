@@ -107,6 +107,58 @@ class TestUnreadableBody:
         assert "body" in result["stderr"]
 
 
+RUFF_JSON = '[{"code": "F401", "filename": "src/a.py"}, {"code": "E9", "filename": "src/b.py"}]'
+MYPY_TEXT = "src/a.py:3: error: bad type  [assignment]\nsrc/a.py:9: error: other  [arg-type]\nFound 2 errors\n"
+BANDIT_JSON = '{"results": [{"test_id": "B105"}, {"test_id": "B101"}, {"test_id": "B602"}]}'
+
+
+def _run_with_exit(tool, code, stdout, stderr=""):
+    adapter = _make_adapter({"t": f"pixi run -e quality {tool} src/"})
+    proc = Mock(returncode=code, stdout=stdout, stderr=stderr)
+    with patch("adapters.direct_pixi_execution.subprocess.run", return_value=proc):
+        return adapter.run_quality_task(
+            task_name="t", quality_tool=tool, target_paths=["src/"],
+            quality_config={"output_format": "json"}, environment="quality",
+        )
+
+
+class TestFindingsVersusToolCrash:
+    """Exit 1 with parseable output is "ran and found issues": counts are kept
+    but the run still fails. Any other non-zero exit is a crash: no counts."""
+
+    @pytest.mark.parametrize("tool,stdout,key,count", [
+        ("ruff", RUFF_JSON, "violation_count", 2),
+        ("mypy", MYPY_TEXT, "error_count", 2),
+        ("bandit", BANDIT_JSON, "issue_count", 3),
+    ])
+    def test_findings_keep_counts_and_still_fail(self, tool, stdout, key, count):
+        result = _run_with_exit(tool, 1, stdout)
+        assert result["success"] is False
+        assert result["exit_code"] == 1
+        assert result["findings_detected"] is True
+        assert result["parsed_output"][key] == count
+
+    @pytest.mark.parametrize("tool,stdout", [
+        ("ruff", ""), ("mypy", "usage: mypy ...\nmypy: error: unrecognized arguments\n"),
+        ("bandit", "bandit: error: bad option"),
+    ])
+    def test_crash_exit_2_has_no_counts(self, tool, stdout):
+        result = _run_with_exit(tool, 2, stdout, stderr="boom")
+        assert result["success"] is False
+        assert "parsed_output" not in result
+        assert "findings_detected" not in result
+
+    @pytest.mark.parametrize("tool", ["ruff", "bandit"])
+    def test_exit_1_with_unparseable_output_is_not_findings(self, tool):
+        result = _run_with_exit(tool, 1, "Traceback: something broke")
+        assert "parsed_output" not in result
+        assert "findings_detected" not in result
+
+    def test_command_not_found_has_no_counts(self):
+        result = _run_with_exit("bandit", 127, "", stderr="bandit: command not found")
+        assert "parsed_output" not in result
+
+
 class TestArgBuilders:
     def _adapter(self):
         return DirectPixiExecutionAdapter(logging=Mock(), working_dir="/tmp/project")
