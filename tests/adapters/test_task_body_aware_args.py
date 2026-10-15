@@ -45,19 +45,29 @@ FULL_COMMAND_CASES = [
         "lint",
         "ruff",
         "pixi run -e quality ruff check src/ tests/ --select=F,E9",
-        ["ruff", "check", "--output-format", "json", "src/"],
+        ["ruff", "check", "src/", "tests/", "--select=F,E9", "--output-format", "json"],
     ),
     (
         "typecheck",
         "mypy",
         "pixi run -e quality mypy src/",
-        ["mypy", "--output", "json", "src/"],
+        ["mypy", "src/", "--output", "json"],
     ),
     (
         "security-scan",
         "bandit",
         "bandit -r src/ --severity-level high --exclude tests/",
-        ["bandit", "-r", "-f", "json", "src/"],
+        [
+            "bandit",
+            "-r",
+            "src/",
+            "--severity-level",
+            "high",
+            "--exclude",
+            "tests/",
+            "-f",
+            "json",
+        ],
     ),
 ]
 
@@ -80,6 +90,7 @@ class TestFullCommandBodyRunsToolDirectly:
 
     def test_environment_selected_when_not_given(self):
         task, tool, body, expected_tail = FULL_COMMAND_CASES[0]
+        body = body.replace("pixi run -e quality ", "")  # no -e in the body
         adapter = _make_adapter({task: body}, declared_envs="quality")
         _, mock_run = _run(
             adapter, task, tool, quality_config={"output_format": "json"}
@@ -90,6 +101,7 @@ class TestFullCommandBodyRunsToolDirectly:
 
     def test_no_environment_available_omits_flag(self):
         task, tool, body, expected_tail = FULL_COMMAND_CASES[1]
+        body = body.replace("pixi run -e quality ", "")  # no -e in the body
         adapter = _make_adapter({task: body}, declared_envs=None)
         _, mock_run = _run(
             adapter, task, tool, quality_config={"output_format": "json"}

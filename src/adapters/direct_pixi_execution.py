@@ -12,6 +12,7 @@ Enhanced with quality intelligence for quality-focused task orchestration includ
 
 import json
 import os
+import shlex
 import shutil
 import statistics
 import subprocess
@@ -41,6 +42,29 @@ QUALITY_ENVIRONMENT_PREFERENCE: tuple[str, ...] = (
     "quality-full",
     "dev",
 )
+
+
+_RUFF_NON_CHECK_COMMANDS = frozenset(
+    {
+        "format",
+        "clean",
+        "server",
+        "version",
+        "config",
+        "linter",
+        "rule",
+        "analyze",
+        "generate-shell-completion",
+    }
+)
+
+# tool -> (flags that select the output format, json flag to apply). Matches
+# what _generate_*_args adds when quality_config asks for json output.
+_JSON_OUTPUT_FLAGS: Dict[str, tuple[tuple[str, ...], List[str]]] = {
+    "ruff": (("--output-format",), ["--output-format", "json"]),
+    "mypy": (("--output",), ["--output", "json"]),
+    "bandit": (("-f", "--format"), ["-f", "json"]),
+}
 
 
 def _resolve_pixi_executable() -> str:
@@ -619,10 +643,57 @@ class DirectPixiExecutionAdapter:
             name for name in names if task_name in self._get_available_tasks(path, name)
         ]
 
+    def environments_providing_tool(
+        self, tool: str, working_dir: str | None = None
+    ) -> Optional[List[str]]:
+        """Environments whose features declare `tool` as a conda or pypi dependency.
+
+        None means "cannot tell" (no pixi.toml, or an empty manifest): the
+        caller must not conclude the tool is missing. An empty list means the
+        manifest was read and no environment declares the tool.
+        """
+        path = working_dir or self.working_dir
+        if not (Path(path) / "pixi.toml").exists():
+            return None
+        config = self._load_pixi_config(path)
+        if not config:
+            return None
+        names = list((config.get("environments", {}) or {}).keys())
+        if "default" not in names:
+            names.insert(0, "default")
+        return [n for n in names if self._environment_declares_tool(config, n, tool)]
+
+    def _environment_declares_tool(
+        self, config: Dict[str, Any], environment: str, tool: str
+    ) -> bool:
+        entry = (config.get("environments", {}) or {}).get(environment)
+        no_default = isinstance(entry, dict) and bool(entry.get("no-default-feature"))
+        features = config.get("feature", {}) or {}
+        tables = [] if no_default else [config]
+        for name in self._resolve_environment_features(config, environment) or []:
+            tables.append(features.get(name, {}) or {})
+
+        wanted = tool.lower().replace("_", "-")
+        for table in tables:
+            scopes = [table, *((table.get("target", {}) or {}).values())]
+            for scope in scopes:
+                for key in ("dependencies", "pypi-dependencies"):
+                    declared = (scope.get(key, {}) or {}).keys()
+                    if wanted in (d.lower().replace("_", "-") for d in declared):
+                        return True
+        return False
+
     def select_quality_environment(
-        self, task_name: str, working_dir: str | None = None
+        self,
+        task_name: str,
+        working_dir: str | None = None,
+        candidates: Optional[List[str]] = None,
     ) -> tuple[Optional[str], str]:
         """Pick a pixi environment for a quality task when the caller gave none.
+
+        `candidates` restricts the choice to those environments (e.g. the ones
+        that provide the tool); by default every environment defining the task
+        is considered.
 
         Returns (environment, reason). environment is None whenever no safe
         choice exists, which keeps run_task's behaviour unchanged (pixi
@@ -634,7 +705,8 @@ class DirectPixiExecutionAdapter:
         if not declared:
             return None, "no named pixi environments are declared"
 
-        candidates = self.environments_for_task(task_name, path)
+        if candidates is None:
+            candidates = self.environments_for_task(task_name, path)
         if not candidates:
             return (
                 None,
@@ -760,17 +832,15 @@ class DirectPixiExecutionAdapter:
                 )
             else:
                 body_mode = "direct_tool"
-                if environment is None:
-                    environment, _ = self.select_quality_environment(
-                        task_name, working_dir
-                    )
-                base_result = self.run_task(
-                    task_name=quality_tool,
-                    args=optimized_args,
-                    timeout=timeout,
-                    working_dir=working_dir,
-                    environment=environment,
-                    as_command=True,
+                base_result = self._run_tool_directly(
+                    task_name,
+                    quality_tool,
+                    body,
+                    optimized_args,
+                    quality_config,
+                    timeout,
+                    working_dir,
+                    environment,
                 )
             base_result["task_body_mode"] = body_mode
 
@@ -1327,6 +1397,144 @@ class DirectPixiExecutionAdapter:
             "parallel_capable": len(available_tools) >= 3,
             "cache_friendly": "ruff" in available_tools,
         }
+
+    def _run_tool_directly(
+        self,
+        task_name: str,
+        quality_tool: str,
+        body: str | List[str],
+        builder_args: List[str],
+        quality_config: Dict[str, Any],
+        timeout: int,
+        working_dir: str,
+        environment: str | None,
+    ) -> Dict[str, Any]:
+        """Run the tool itself for an alias task whose body is a full command.
+
+        Keeps the task's own arguments (adding only the json output flag the
+        builders would add), falling back to the builder args when the body
+        cannot be parsed safely. The environment is the caller's, else the
+        body's `-e`, else one that declares the tool, else the usual choice.
+        """
+        body_env, task_args, reason = self._parse_task_body_args(body, quality_tool)
+        if task_args is None:
+            args = builder_args
+            args_info = {
+                "task_args_mode": "builder_fallback",
+                "task_args_fallback_reason": reason,
+            }
+        else:
+            if quality_config.get("output_format") == "json":
+                task_args = self._with_json_output(quality_tool, task_args)
+            args, args_info = task_args, {"task_args_mode": "task_args"}
+
+        if environment:
+            source = "caller"
+        elif body_env:
+            environment, source = body_env, "task_body"
+        else:
+            providers = self.environments_providing_tool(quality_tool, working_dir)
+            if providers is not None and not providers:
+                message = (
+                    f"{quality_tool} is not installed in any pixi environment "
+                    "of this project"
+                )
+                return {
+                    "success": False,
+                    "stdout": "",
+                    "stderr": message,
+                    "error": message,
+                    "exit_code": 1,
+                    "task_name": task_name,
+                    "working_dir": working_dir,
+                    **args_info,
+                }
+            source = "preferred" if providers is None else "tool_dependency"
+            environment, _ = self.select_quality_environment(
+                task_name, working_dir, candidates=providers
+            )
+
+        result = self.run_task(
+            task_name=quality_tool,
+            args=args,
+            timeout=timeout,
+            working_dir=working_dir,
+            environment=environment,
+            as_command=True,
+        )
+        result.update(args_info, tool_environment_source=source)
+        return result
+
+    @staticmethod
+    def _split_task_body(
+        body: str | List[str],
+    ) -> tuple[Optional[List[str]], Optional[str]]:
+        """Tokenize a task body; (None, reason) when it uses shell syntax."""
+        if isinstance(body, list):
+            return [str(t) for t in body], None
+        lexer = shlex.shlex(body, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        try:
+            tokens = list(lexer)
+        except ValueError as e:
+            return None, f"cannot parse task body: {e}"
+        for token in tokens:
+            if all(c in "();<>|&" for c in token):
+                return None, f"task body uses shell operator {token!r}"
+            if "$" in token or "`" in token:
+                return None, f"task body uses shell expansion in {token!r}"
+        return tokens, None
+
+    def _parse_task_body_args(
+        self, body: str | List[str], tool: str
+    ) -> tuple[Optional[str], Optional[List[str]], Optional[str]]:
+        """Split a full-command body into (pixi env from -e, tool args, reason).
+
+        tool args is None, with a reason, when the body is not a single
+        invocation of `tool` (optionally behind `pixi run -e <env>`).
+        """
+        tokens, reason = self._split_task_body(body)
+        if tokens is None:
+            return None, None, reason
+
+        env: Optional[str] = None
+        if tokens[:2] == ["pixi", "run"]:
+            i = 2
+            while i < len(tokens) and tokens[i].startswith("-"):
+                flag = tokens[i]
+                if flag in ("-e", "--environment") and i + 1 < len(tokens):
+                    env, i = tokens[i + 1], i + 2
+                elif flag.startswith("--environment="):
+                    env, i = flag.split("=", 1)[1], i + 1
+                else:
+                    return None, None, f"unsupported pixi run flag {flag!r}"
+            tokens = tokens[i:]
+
+        if not tokens or tokens[0] != tool:
+            found = tokens[0] if tokens else "nothing"
+            return None, None, f"task body runs {found!r}, not {tool!r}"
+        args = tokens[1:]
+        if tool == "ruff" and args and args[0] in _RUFF_NON_CHECK_COMMANDS:
+            return None, None, f"ruff {args[0]!r} is not a check invocation"
+        return env, args, None
+
+    @staticmethod
+    def _with_json_output(tool: str, args: List[str]) -> List[str]:
+        """Replace any existing output-format flag with the tool's json flag."""
+        spec = _JSON_OUTPUT_FLAGS.get(tool)
+        if spec is None:
+            return args
+        names, json_flag = spec
+        kept: List[str] = []
+        skip = False
+        for arg in args:
+            if skip:
+                skip = False
+            elif arg in names:
+                skip = True
+            elif not any(arg.startswith(n + "=") for n in names if n.startswith("--")):
+                kept.append(arg)
+        return kept + json_flag
 
     @staticmethod
     def _is_bare_tool_body(body: str | List[str], quality_tool: str) -> bool:
