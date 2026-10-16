@@ -318,7 +318,11 @@ quality-full = {features = ["quality", "quality-extended", "quality-ci"], solve-
 dev = {features = ["quality", "quality-extended", "quality-ci", "dev-specialized"], solve-group = "default"} # ~250s install
 
 # CI environment (optimized for CI performance)
-ci = {features = ["quality", "quality-ci", "ci-build", "quality-gates"], solve-group = "default"}  # ~120s install - CI optimized
+ci = {features = ["quality", "quality-ci", "quality-gates"], solve-group = "default"}
+
+# Build environment used by the reusable CI workflow's "Build Package" job
+# (`pixi install -e quality-ci` then `pixi run -e quality-ci build`).
+quality-ci = {features = ["quality-ci", "ci-build"], solve-group = "default"}  # ~120s install - CI optimized
 
 # Per-Python-version CI environments (ci-framework pattern "py{nodot}"): each
 # matrix leg of the reusable workflow runs `test` on its own interpreter.
