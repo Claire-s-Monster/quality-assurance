@@ -77,11 +77,25 @@ def test_non_src_directory_is_swapped(root):
     assert "--select=F" in args
 
 
-def test_existing_file_positional_is_swapped(root):
-    args = _lint(root, "ruff check app.py", ["pkg/"])
+def test_file_positional_is_kept_in_place(root):
+    ex = Executor(root, {"dead-code": "vulture src/ app.py --min-confidence 80"})
+    QualityToolExecutionAdapter(ex).execute_dead_code_detection(
+        project_path=str(root), target_paths=["lib/"]
+    )
+    args = ex.calls[0][1]
 
-    assert "app.py" not in args
-    assert "pkg/" in args
+    assert args[:2] == ["lib/", "app.py"]
+    assert "src/" not in args
+
+
+def test_file_only_positional_falls_back_to_appended(root):
+    ex = Executor(root, {"lint": "ruff check app.py"})
+    result = QualityToolExecutionAdapter(ex).execute_lint_assessment(
+        tool=QualityTool.RUFF, target_paths=["pkg/"], project_path=str(root)
+    )
+
+    assert result.target_paths_mode == "appended"
+    assert result.target_paths_fallback_reason
 
 
 def test_option_value_that_exists_is_left_intact(root):

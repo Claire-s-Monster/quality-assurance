@@ -139,9 +139,10 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         """Replace the task body's positional paths with target_paths.
 
         A positional (non-option, non-option-value) token is a path when it is
-        src/tests or exists under workdir. The first is replaced, later ones
-        dropped; option values such as `--exclude tests/` are kept. Returns
-        None when the body has no path-like positional.
+        src/tests or an existing directory under workdir. The first is
+        replaced, later ones dropped; option values such as `--exclude tests/`
+        and file positionals (e.g. a vulture whitelist) are kept in place.
+        Returns None when the body has no directory-like positional.
         """
         value_opts = _VALUE_OPTIONS.get(tool, frozenset())
         base = Path(workdir) if workdir else Path.cwd()
@@ -155,7 +156,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             elif token.startswith("-") and token != "-":
                 takes_value = token in value_opts
                 swapped.append(token)
-            elif token in _TASK_PATH_TOKENS or (base / token).exists():
+            elif token in _TASK_PATH_TOKENS or (base / token).is_dir():
                 if not placed:
                     swapped.extend(target_paths)
                     placed = True
@@ -191,7 +192,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         if tokens is not None:
             swapped = self._swap_path_tokens(tokens, target_paths, tool.value, workdir)
             if swapped is None:
-                reason = "task body names no existing path to replace"
+                reason = "task body names no directory to replace"
         if swapped is None:
             result: Dict[str, Any] = dict(
                 executor.run_task(
