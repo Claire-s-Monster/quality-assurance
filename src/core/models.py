@@ -388,6 +388,11 @@ class QualitySuiteConfiguration(BaseModel):
         description="Validated paths (relative to project root) to analyze; "
         "None keeps each tool's default scope",
     )
+    project_path: Optional[str] = Field(
+        default=None,
+        description="Absolute project root (working directory / manifest location "
+        "for every tool run); None uses the server working directory",
+    )
 
     # Output configuration
     generate_report: bool = Field(

@@ -258,7 +258,12 @@ class QualityAssuranceLeanMCP:
                         "type": "array",
                         "items": {"type": "string"},
                         "default": ["src/"],
-                        "description": "Paths to analyze",
+                        "description": "Paths to analyze (relative to project_path)",
+                    },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Absolute project root to analyze; used as the "
+                        "working directory for every tool (default: server cwd)",
                     },
                     "parallel_execution": {
                         "type": "boolean",

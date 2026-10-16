@@ -765,6 +765,7 @@ def quality_execute_comprehensive_suite(
     generate_report: Optional[bool] = True,
     report_format: Optional[str] = "markdown",
     use_cache: Optional[bool] = True,
+    project_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Execute complete quality assessment suite with orchestrated tool execution.
@@ -784,6 +785,7 @@ def quality_execute_comprehensive_suite(
         generate_report: Generate comprehensive report
         report_format: Report format ("markdown", "json", "html")
         use_cache: Use cached results for performance
+        project_path: Absolute path to the project root to analyze (default: server working directory)
 
     Returns:
         ComprehensiveQualityResult with aggregated results, scoring, and recommendations
@@ -791,6 +793,20 @@ def quality_execute_comprehensive_suite(
     try:
         if not orchestration_service:
             initialize_server()
+
+        project_root = Path(os.getcwd())
+        resolved_project: Optional[str] = None
+        if project_path is not None:
+            if not os.path.isabs(project_path) or not os.path.isdir(project_path):
+                return {
+                    "error": "Invalid project_path: must be an absolute path to an "
+                    f"existing directory: {project_path}",
+                    "assessment_type": "comprehensive",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat(),
+                }
+            project_root = Path(project_path).resolve()
+            resolved_project = str(project_root)
 
         # Set defaults
         if included_tools is None:
@@ -820,7 +836,7 @@ def quality_execute_comprehensive_suite(
         suite_paths: Optional[List[str]] = None
         if target_paths and target_paths != ["src/"]:
             try:
-                suite_paths = resolve_target_paths(target_paths, Path(os.getcwd()))
+                suite_paths = resolve_target_paths(target_paths, project_root)
             except ValueError as e:
                 return {
                     "error": f"Invalid target_paths: {e}",
@@ -832,6 +848,7 @@ def quality_execute_comprehensive_suite(
         suite_config = QualitySuiteConfiguration(
             included_tools=quality_tools,
             target_paths=suite_paths,
+            project_path=resolved_project,
             parallel_execution=_or_default(parallel_execution, True),
             quality_threshold=_or_default(quality_threshold, 8.0),
             fail_fast=_or_default(fail_fast, False),

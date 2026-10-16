@@ -915,6 +915,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         exclude_patterns: Optional[List[str]] = None,
         confidence_threshold: int = 80,
         target_paths: Optional[List[str]] = None,
+        project_path: Optional[str] = None,
     ) -> QualityAssessmentResult:
         """
         Identify unused code via pixi execution.
@@ -929,7 +930,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             target_path = "src/"
 
             # Validate task exists
-            task_check = self.pixi_executor.task_exists(pixi_task)
+            task_check = self.pixi_executor.task_exists(
+                pixi_task, working_dir=project_path
+            )
             if not task_check.get("exists", False):
                 return self._create_error_result(
                     tool=tool,
@@ -954,15 +957,19 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
 
             # Execute pixi task
             environment, env_auto, env_notes = self._select_environment(
-                pixi_task, None, None
+                pixi_task, project_path, None
             )
             if target_paths:
                 result = self._run_with_target_paths(
-                    pixi_task, tool, args, target_paths, None, environment
+                    pixi_task, tool, args, target_paths, project_path, environment
                 )
             else:
                 result = self.pixi_executor.run_task(
-                    pixi_task, args=args, timeout=300, environment=environment
+                    pixi_task,
+                    args=args,
+                    timeout=300,
+                    working_dir=project_path,
+                    environment=environment,
                 )
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()

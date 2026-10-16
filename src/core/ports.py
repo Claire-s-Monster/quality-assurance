@@ -154,6 +154,7 @@ class QualityToolExecutionPort(ABC):
         exclude_patterns: Optional[List[str]] = None,
         confidence_threshold: int = 80,
         target_paths: Optional[List[str]] = None,
+        project_path: Optional[str] = None,
     ) -> QualityAssessmentResult:
         """Identify unused code via pixi execution."""
         pass

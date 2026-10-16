@@ -1034,10 +1034,13 @@ class QualityOrchestrationService:
     def _target_path_kwargs(
         configuration: QualitySuiteConfiguration,
     ) -> Dict[str, Any]:
-        """Executor kwargs for custom target paths; empty keeps tool defaults."""
+        """Executor kwargs for custom target paths / project root; empty keeps defaults."""
+        kwargs: Dict[str, Any] = {}
         if configuration.target_paths:
-            return {"target_paths": list(configuration.target_paths)}
-        return {}
+            kwargs["target_paths"] = list(configuration.target_paths)
+        if configuration.project_path:
+            kwargs["project_path"] = configuration.project_path
+        return kwargs
 
     def _execute_tools_parallel(
         self, configuration: QualitySuiteConfiguration
