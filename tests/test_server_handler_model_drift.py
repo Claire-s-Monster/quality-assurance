@@ -361,7 +361,12 @@ def _suite_result(config) -> ComprehensiveQualityResult:
     )
 
 
-def test_suite_warns_when_target_paths_cannot_be_honoured(server):
+def test_suite_custom_target_paths_are_honoured_without_warning(
+    server, tmp_path, monkeypatch
+):
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "pkg").mkdir()
+    monkeypatch.chdir(tmp_path)
     server.fake.execute_comprehensive_suite = _suite_result
 
     result = server.quality_execute_comprehensive_suite.fn(
@@ -369,9 +374,7 @@ def test_suite_warns_when_target_paths_cannot_be_honoured(server):
     )
 
     assert "error" not in result, result
-    assert len(result["warnings"]) == 1
-    assert "target_paths" in result["warnings"][0]
-    assert "lib/" in result["warnings"][0]
+    assert result["warnings"] == []
 
 
 def test_suite_default_target_paths_produce_no_warning(server):

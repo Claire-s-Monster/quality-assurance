@@ -109,6 +109,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         use_cache: bool = True,
         project_path: Optional[str] = None,
         environment: Optional[str] = None,
+        target_paths: Optional[List[str]] = None,
     ) -> QualityAssessmentResult:
         """
         Execute linting tools via pixi with intelligent result parsing.
@@ -156,7 +157,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
 
             # Build task arguments
             args = []
-            if target_path != "src/":
+            if target_paths:
+                args.extend(target_paths)
+            elif target_path != "src/":
                 args.append(target_path)
             if rules:
                 # Add rule-specific arguments based on tool
@@ -280,6 +283,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         cache_dir: Optional[str] = None,
         project_path: Optional[str] = None,
         environment: Optional[str] = None,
+        target_paths: Optional[List[str]] = None,
     ) -> QualityAssessmentResult:
         """
         Execute type checking tools via pixi with comprehensive analysis.
@@ -326,6 +330,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
 
             # Add JSON output for parsing
             args.extend(["--show-error-codes", "--show-column-numbers"])
+            if target_paths:
+                args.extend(target_paths)
 
             # Execute pixi task
             environment, env_auto, env_notes = self._select_environment(
@@ -444,6 +450,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         use_cache: bool = True,
         project_path: Optional[str] = None,
         environment: Optional[str] = None,
+        target_paths: Optional[List[str]] = None,
     ) -> QualityAssessmentResult:
         """
         Execute security vulnerability scanning via pixi.
@@ -492,7 +499,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 args.extend(["--exclude", "tests,test,*_test.py,test_*.py"])
 
             # Add recursive scan on target path
-            args.extend(["-r", target_path])
+            args.extend(["-r", *(target_paths or [target_path])])
 
             # Execute pixi task
             environment, env_auto, env_notes = self._select_environment(
@@ -617,6 +624,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         use_cache: bool = True,
         project_path: Optional[str] = None,
         environment: Optional[str] = None,
+        target_paths: Optional[List[str]] = None,
     ) -> QualityAssessmentResult:
         """
         Analyze code complexity metrics via pixi.
@@ -652,7 +660,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 )
 
             # Build arguments for radon
-            args = ["cc", "src/", "--json"]  # Cyclomatic complexity with JSON output
+            scan_paths = target_paths or ["src/"]
+            args = ["cc", *scan_paths, "--json"]  # Cyclomatic complexity, JSON output
             if complexity_threshold != 10:
                 args.extend(["--min", str(complexity_threshold)])
 
@@ -683,7 +692,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             # If maintainability is requested (default), run second command
             include_maintainability = include_metrics is None or "mi" in include_metrics
             if include_maintainability:
-                mi_args = ["mi", "src/", "--json"]
+                mi_args = ["mi", *scan_paths, "--json"]
                 mi_result = self.pixi_executor.run_task(
                     pixi_task,
                     args=mi_args,
@@ -792,6 +801,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         aggressive_mode: bool = False,
         exclude_patterns: Optional[List[str]] = None,
         confidence_threshold: int = 80,
+        target_paths: Optional[List[str]] = None,
     ) -> QualityAssessmentResult:
         """
         Identify unused code via pixi execution.
@@ -819,7 +829,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 )
 
             # Build arguments for vulture
-            args = ["src/"]
+            args = list(target_paths or ["src/"])
             if aggressive_mode:
                 args.append("--min-confidence=0")
             else:
