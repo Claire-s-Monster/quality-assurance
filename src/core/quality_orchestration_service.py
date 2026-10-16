@@ -11,6 +11,7 @@ import json
 import time
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.models import (
@@ -46,6 +47,28 @@ from core.ports import (
     QualityAuditPort,
     LoggingPort,
 )
+
+
+def resolve_target_paths(target_paths: List[str], project_root: Path) -> List[str]:
+    """
+    Validate suite target paths against the project root.
+
+    Relative paths are resolved against project_root. Returns the paths as
+    project-root-relative strings (as tools are executed from the project root).
+
+    Raises:
+        ValueError: If a path does not exist or escapes the project root.
+    """
+    root = project_root.resolve()
+    resolved: List[str] = []
+    for raw in target_paths:
+        candidate = (root / raw).resolve()
+        if not candidate.is_relative_to(root):
+            raise ValueError(f"target path escapes the project root: {raw}")
+        if not candidate.exists():
+            raise ValueError(f"target path does not exist: {raw}")
+        resolved.append(candidate.relative_to(root).as_posix() or ".")
+    return resolved
 
 
 class QualityOrchestrationService:
@@ -1007,6 +1030,15 @@ class QualityOrchestrationService:
 
     # Private helper methods
 
+    @staticmethod
+    def _target_path_kwargs(
+        configuration: QualitySuiteConfiguration,
+    ) -> Dict[str, Any]:
+        """Executor kwargs for custom target paths; empty keeps tool defaults."""
+        if configuration.target_paths:
+            return {"target_paths": list(configuration.target_paths)}
+        return {}
+
     def _execute_tools_parallel(
         self, configuration: QualitySuiteConfiguration
     ) -> tuple[List[QualityAssessmentResult], List[QualityTool], List[QualityTool]]:
@@ -1017,6 +1049,7 @@ class QualityOrchestrationService:
 
         # Create futures for each tool
         futures = {}
+        path_kwargs = self._target_path_kwargs(configuration)
 
         for tool in configuration.included_tools:
             try:
@@ -1026,24 +1059,32 @@ class QualityOrchestrationService:
                         tool=tool,
                         target_path="src/",
                         fix_mode=False,
+                        **path_kwargs,
                     )
                 elif tool == QualityTool.MYPY:
                     future = self._executor.submit(
                         self.quality_executor.execute_typecheck_assessment,
                         tool=tool,
                         strict_mode=False,
+                        **path_kwargs,
                     )
                 elif tool == QualityTool.BANDIT:
                     future = self._executor.submit(
-                        self.quality_executor.execute_security_scan, tool=tool
+                        self.quality_executor.execute_security_scan,
+                        tool=tool,
+                        **path_kwargs,
                     )
                 elif tool == QualityTool.RADON:
                     future = self._executor.submit(
-                        self.quality_executor.execute_complexity_analysis, tool=tool
+                        self.quality_executor.execute_complexity_analysis,
+                        tool=tool,
+                        **path_kwargs,
                     )
                 elif tool == QualityTool.VULTURE:
                     future = self._executor.submit(
-                        self.quality_executor.execute_dead_code_detection, tool=tool
+                        self.quality_executor.execute_dead_code_detection,
+                        tool=tool,
+                        **path_kwargs,
                     )
                 else:
                     # Skip unsupported tools
@@ -1086,6 +1127,7 @@ class QualityOrchestrationService:
         individual_results: List[QualityAssessmentResult] = []
         failed_tools: List[QualityTool] = []
         skipped_tools: List[QualityTool] = []
+        path_kwargs = self._target_path_kwargs(configuration)
 
         for tool in configuration.included_tools:
             try:
@@ -1093,21 +1135,23 @@ class QualityOrchestrationService:
 
                 if tool == QualityTool.RUFF:
                     result = self.quality_executor.execute_lint_assessment(
-                        tool=tool, target_path="src/", fix_mode=False
+                        tool=tool, target_path="src/", fix_mode=False, **path_kwargs
                     )
                 elif tool == QualityTool.MYPY:
                     result = self.quality_executor.execute_typecheck_assessment(
-                        tool=tool, strict_mode=False
+                        tool=tool, strict_mode=False, **path_kwargs
                     )
                 elif tool == QualityTool.BANDIT:
-                    result = self.quality_executor.execute_security_scan(tool=tool)
+                    result = self.quality_executor.execute_security_scan(
+                        tool=tool, **path_kwargs
+                    )
                 elif tool == QualityTool.RADON:
                     result = self.quality_executor.execute_complexity_analysis(
-                        tool=tool
+                        tool=tool, **path_kwargs
                     )
                 elif tool == QualityTool.VULTURE:
                     result = self.quality_executor.execute_dead_code_detection(
-                        tool=tool
+                        tool=tool, **path_kwargs
                     )
                 else:
                     skipped_tools.append(tool)

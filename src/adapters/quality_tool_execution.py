@@ -28,6 +28,10 @@ from core.ports import QualityToolExecutionPort
 from adapters.direct_pixi_execution import TOOL_TASK_ALIASES, is_execution_failure
 
 
+_TASK_PATH_TOKENS = {"src", "src/", "tests", "tests/"}
+_PATH_FLAGS = {"-r", "--recursive"}
+
+
 class QualityToolExecutionAdapter(QualityToolExecutionPort):
     """
     Adapter for executing quality assessment tools via pixi.
@@ -81,6 +85,73 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         )
         return selected, True, [note]
 
+    @staticmethod
+    def _swap_path_tokens(tokens: List[str], target_paths: List[str]) -> List[str]:
+        """Replace the task body's positional src/tests paths with target_paths.
+
+        The first positional path is replaced, later ones dropped; option
+        values such as `--exclude tests/` are kept. Paths are appended when
+        the body names none.
+        """
+        swapped: List[str] = []
+        placed = False
+        for i, token in enumerate(tokens):
+            prev = tokens[i - 1] if i else ""
+            positional = token in _TASK_PATH_TOKENS and (
+                not prev.startswith("-") or prev in _PATH_FLAGS
+            )
+            if not positional:
+                swapped.append(token)
+            elif not placed:
+                swapped.extend(target_paths)
+                placed = True
+        if not placed:
+            swapped.extend(target_paths)
+        return swapped
+
+    def _run_with_target_paths(
+        self,
+        pixi_task: str,
+        tool: QualityTool,
+        extra_args: List[str],
+        target_paths: List[str],
+        project_path: Optional[str],
+        environment: Optional[str],
+        path_flag: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Run the tool directly with target_paths replacing the task's own paths.
+
+        The pixi task body hard-codes `src/`, and task args are only appended,
+        so the body's tool invocation (keeping its other flags) is run as a
+        command in the task's environment with the paths swapped. When the body
+        cannot be parsed as a single invocation of the tool, falls back to the
+        task with the paths appended.
+        """
+        executor = self.pixi_executor
+        workdir = project_path or executor.working_dir
+        body = executor._get_available_tasks(workdir, environment).get(pixi_task)
+        body_env, tokens = None, None
+        if body:
+            body_env, tokens, _ = executor._parse_task_body_args(body, tool.value)
+        if tokens is None:
+            result: Dict[str, Any] = executor.run_task(
+                pixi_task,
+                args=[*extra_args, *(path_flag or []), *target_paths],
+                timeout=300,
+                working_dir=project_path,
+                environment=environment,
+            )
+            return result
+        result = executor.run_task(
+            tool.value,
+            args=[*self._swap_path_tokens(tokens, target_paths), *extra_args],
+            timeout=300,
+            working_dir=project_path,
+            environment=environment or body_env,
+            as_command=True,
+        )
+        return result
+
     def _describe_task_not_found(
         self, tool_value: str, project_path: Optional[str]
     ) -> tuple[str, str]:
@@ -109,6 +180,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         use_cache: bool = True,
         project_path: Optional[str] = None,
         environment: Optional[str] = None,
+        target_paths: Optional[List[str]] = None,
     ) -> QualityAssessmentResult:
         """
         Execute linting tools via pixi with intelligent result parsing.
@@ -156,7 +228,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
 
             # Build task arguments
             args = []
-            if target_path != "src/":
+            if not target_paths and target_path != "src/":
                 args.append(target_path)
             if rules:
                 # Add rule-specific arguments based on tool
@@ -175,13 +247,18 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             environment, env_auto, env_notes = self._select_environment(
                 pixi_task, project_path, environment
             )
-            result = self.pixi_executor.run_task(
-                pixi_task,
-                args=args,
-                timeout=300,
-                working_dir=project_path,
-                environment=environment,
-            )
+            if target_paths:
+                result = self._run_with_target_paths(
+                    pixi_task, tool, args, target_paths, project_path, environment
+                )
+            else:
+                result = self.pixi_executor.run_task(
+                    pixi_task,
+                    args=args,
+                    timeout=300,
+                    working_dir=project_path,
+                    environment=environment,
+                )
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
 
@@ -280,6 +357,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         cache_dir: Optional[str] = None,
         project_path: Optional[str] = None,
         environment: Optional[str] = None,
+        target_paths: Optional[List[str]] = None,
     ) -> QualityAssessmentResult:
         """
         Execute type checking tools via pixi with comprehensive analysis.
@@ -331,13 +409,18 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             environment, env_auto, env_notes = self._select_environment(
                 pixi_task, project_path, environment
             )
-            result = self.pixi_executor.run_task(
-                pixi_task,
-                args=args,
-                timeout=300,
-                working_dir=project_path,
-                environment=environment,
-            )
+            if target_paths:
+                result = self._run_with_target_paths(
+                    pixi_task, tool, args, target_paths, project_path, environment
+                )
+            else:
+                result = self.pixi_executor.run_task(
+                    pixi_task,
+                    args=args,
+                    timeout=300,
+                    working_dir=project_path,
+                    environment=environment,
+                )
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
 
@@ -444,6 +527,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         use_cache: bool = True,
         project_path: Optional[str] = None,
         environment: Optional[str] = None,
+        target_paths: Optional[List[str]] = None,
     ) -> QualityAssessmentResult:
         """
         Execute security vulnerability scanning via pixi.
@@ -492,19 +576,31 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 args.extend(["--exclude", "tests,test,*_test.py,test_*.py"])
 
             # Add recursive scan on target path
-            args.extend(["-r", target_path])
+            if not target_paths:
+                args.extend(["-r", target_path])
 
             # Execute pixi task
             environment, env_auto, env_notes = self._select_environment(
                 pixi_task, project_path, environment
             )
-            result = self.pixi_executor.run_task(
-                pixi_task,
-                args=args,
-                timeout=300,
-                working_dir=project_path,
-                environment=environment,
-            )
+            if target_paths:
+                result = self._run_with_target_paths(
+                    pixi_task,
+                    tool,
+                    args,
+                    target_paths,
+                    project_path,
+                    environment,
+                    path_flag=["-r"],
+                )
+            else:
+                result = self.pixi_executor.run_task(
+                    pixi_task,
+                    args=args,
+                    timeout=300,
+                    working_dir=project_path,
+                    environment=environment,
+                )
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
 
@@ -617,6 +713,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         use_cache: bool = True,
         project_path: Optional[str] = None,
         environment: Optional[str] = None,
+        target_paths: Optional[List[str]] = None,
     ) -> QualityAssessmentResult:
         """
         Analyze code complexity metrics via pixi.
@@ -652,7 +749,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 )
 
             # Build arguments for radon
-            args = ["cc", "src/", "--json"]  # Cyclomatic complexity with JSON output
+            scan_paths = target_paths or ["src/"]
+            args = ["cc", *scan_paths, "--json"]  # Cyclomatic complexity, JSON output
             if complexity_threshold != 10:
                 args.extend(["--min", str(complexity_threshold)])
 
@@ -683,7 +781,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             # If maintainability is requested (default), run second command
             include_maintainability = include_metrics is None or "mi" in include_metrics
             if include_maintainability:
-                mi_args = ["mi", "src/", "--json"]
+                mi_args = ["mi", *scan_paths, "--json"]
                 mi_result = self.pixi_executor.run_task(
                     pixi_task,
                     args=mi_args,
@@ -792,6 +890,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         aggressive_mode: bool = False,
         exclude_patterns: Optional[List[str]] = None,
         confidence_threshold: int = 80,
+        target_paths: Optional[List[str]] = None,
     ) -> QualityAssessmentResult:
         """
         Identify unused code via pixi execution.
@@ -819,7 +918,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 )
 
             # Build arguments for vulture
-            args = ["src/"]
+            args = [] if target_paths else ["src/"]
             if aggressive_mode:
                 args.append("--min-confidence=0")
             else:
@@ -833,9 +932,14 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             environment, env_auto, env_notes = self._select_environment(
                 pixi_task, None, None
             )
-            result = self.pixi_executor.run_task(
-                pixi_task, args=args, timeout=300, environment=environment
-            )
+            if target_paths:
+                result = self._run_with_target_paths(
+                    pixi_task, tool, args, target_paths, None, environment
+                )
+            else:
+                result = self.pixi_executor.run_task(
+                    pixi_task, args=args, timeout=300, environment=environment
+                )
             execution_time_ms = (time.time() - execution_start) * 1000
             end_time = datetime.now(UTC).isoformat()
 

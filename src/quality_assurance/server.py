@@ -9,6 +9,7 @@ using pixi-first execution and the QualityOrchestrationService business logic la
 import logging
 import sys
 import os
+from pathlib import Path
 from dataclasses import asdict
 from typing import List, Dict, Any, Optional, Tuple, TypeVar
 from datetime import datetime
@@ -20,7 +21,10 @@ from pydantic import BaseModel
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from core.container import Container
-from core.quality_orchestration_service import QualityOrchestrationService
+from core.quality_orchestration_service import (
+    QualityOrchestrationService,
+    resolve_target_paths,
+)
 from core.models import (
     QualityTool,
     QualityAssessmentResult,
@@ -811,20 +815,23 @@ def quality_execute_comprehensive_suite(
                 "timestamp": datetime.now().isoformat(),
             }
 
-        # Create suite configuration
-        # QualitySuiteConfiguration and execute_comprehensive_suite have no path
-        # scope (the service analyzes "src/" only), so a custom target_paths
-        # cannot be honoured; surface that instead of dropping it silently.
+        # Validate custom target paths; the default keeps each tool's own scope
         warnings: List[str] = []
-        if target_paths != ["src/"]:
-            warnings.append(
-                "target_paths is not supported by the comprehensive suite and "
-                f"was ignored (requested {target_paths}); the suite analyzes "
-                "'src/' only."
-            )
+        suite_paths: Optional[List[str]] = None
+        if target_paths and target_paths != ["src/"]:
+            try:
+                suite_paths = resolve_target_paths(target_paths, Path(os.getcwd()))
+            except ValueError as e:
+                return {
+                    "error": f"Invalid target_paths: {e}",
+                    "assessment_type": "comprehensive",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat(),
+                }
 
         suite_config = QualitySuiteConfiguration(
             included_tools=quality_tools,
+            target_paths=suite_paths,
             parallel_execution=_or_default(parallel_execution, True),
             quality_threshold=_or_default(quality_threshold, 8.0),
             fail_fast=_or_default(fail_fast, False),

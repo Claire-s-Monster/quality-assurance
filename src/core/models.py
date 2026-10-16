@@ -371,6 +371,12 @@ class QualitySuiteConfiguration(BaseModel):
         default_factory=dict, description="Complexity analysis configuration"
     )
 
+    target_paths: Optional[List[str]] = Field(
+        default=None,
+        description="Validated paths (relative to project root) to analyze; "
+        "None keeps each tool's default scope",
+    )
+
     # Output configuration
     generate_report: bool = Field(
         default=True, description="Generate comprehensive report"
