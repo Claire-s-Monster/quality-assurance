@@ -224,7 +224,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
         baselines.sort(key=lambda x: x.created_at)
 
         # Extract trend data
-        trend_data = {
+        trend_data: Dict[str, List[Any]] = {
             "overall_scores": [],
             "violation_counts": [],
             "critical_violations": [],
@@ -274,7 +274,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
     ) -> Dict[str, Any]:
         """Detect quality regressions and generate alerts."""
 
-        regression_analysis = {
+        regression_analysis: Dict[str, Any] = {
             "regression_detected": comparison.regression_detected,
             "threshold_percent": threshold_percent,
             "severity": "none",
@@ -598,7 +598,8 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
 
         try:
             with open(index_file, "r") as f:
-                return json.load(f)
+                index: Dict[str, List[str]] = json.load(f)
+                return index
         except (json.JSONDecodeError, ValueError):
             return {}
 
@@ -912,7 +913,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
             return 0.0
 
         variance = sum((x - mean) ** 2 for x in values) / len(values)
-        std_dev = variance**0.5
+        std_dev: float = variance**0.5
 
         return std_dev / mean  # Coefficient of variation
 
@@ -924,7 +925,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
         if len(baselines) < 2:
             return {"insufficient_data": True}
 
-        patterns = {
+        patterns: Dict[str, Any] = {
             "consistent_improvement": False,
             "consistent_degradation": False,
             "cyclical_pattern": False,
@@ -1157,7 +1158,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
         sum_sq_x = sum((time_values[i] - mean_x) ** 2 for i in range(n))
         sum_sq_y = sum((values[i] - mean_y) ** 2 for i in range(n))
 
-        denominator = (sum_sq_x * sum_sq_y) ** 0.5
+        denominator: float = (sum_sq_x * sum_sq_y) ** 0.5
 
         if denominator == 0:
             return 0.0
@@ -1185,7 +1186,8 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
         mean = sum(values) / len(values)
         variance = sum((x - mean) ** 2 for x in values) / (len(values) - 1)
 
-        return variance**0.5
+        std_dev: float = variance**0.5
+        return std_dev
 
     def _forecast_next_value(self, values: List[float]) -> float:
         """Simple forecast of next value using linear extrapolation."""
@@ -1243,7 +1245,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
             return False
 
         # Look for weekly patterns (simplified)
-        weekday_scores = {}
+        weekday_scores: Dict[int, List[float]] = {}
         for i, timestamp in enumerate(timestamps):
             weekday = timestamp.weekday()  # Monday = 0, Sunday = 6
             if weekday not in weekday_scores:
@@ -1262,7 +1264,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
                 overall_mean = sum(avg_values) / len(avg_values)
 
                 # If weekday variance is > 10% of mean, consider it seasonal
-                return std_dev / overall_mean > 0.1
+                return bool(std_dev / overall_mean > 0.1)
 
         return False
 
@@ -1291,7 +1293,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
             return []
 
         improvement_periods = []
-        current_period = None
+        current_period: Optional[Dict[str, Any]] = None
 
         for i in range(1, len(values)):
             if values[i] > values[i - 1]:  # Improvement
@@ -1334,7 +1336,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
             return []
 
         regression_periods = []
-        current_period = None
+        current_period: Optional[Dict[str, Any]] = None
 
         for i in range(1, len(values)):
             if values[i] < values[i - 1]:  # Regression
@@ -1504,7 +1506,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
     def _calculate_correlation_matrix(self, metrics: Dict[str, List[float]]) -> Dict:
         """Calculate correlation matrix between different quality metrics."""
         metric_names = list(metrics.keys())
-        correlations = {}
+        correlations: Dict[str, Dict[str, float]] = {}
 
         for i, metric1 in enumerate(metric_names):
             correlations[metric1] = {}
@@ -1535,7 +1537,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
         sum_sq_x = sum((x[i] - mean_x) ** 2 for i in range(n))
         sum_sq_y = sum((y[i] - mean_y) ** 2 for i in range(n))
 
-        denominator = (sum_sq_x * sum_sq_y) ** 0.5
+        denominator: float = (sum_sq_x * sum_sq_y) ** 0.5
 
         if denominator == 0:
             return 0.0
@@ -1794,7 +1796,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
         critical_violations: List[float],
     ) -> List[Dict]:
         """Generate quality alerts based on trend analysis."""
-        alerts = []
+        alerts: List[Dict] = []
 
         if not scores:
             return alerts
@@ -1850,7 +1852,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
         breaches = []
 
         # Quality score thresholds
-        quality_thresholds = [
+        quality_thresholds: List[Dict[str, Any]] = [
             {"value": 9.0, "level": "excellent"},
             {"value": 8.0, "level": "good"},
             {"value": 7.0, "level": "acceptable"},
@@ -1906,7 +1908,7 @@ class QualityTrendAnalysisAdapter(QualityTrendAnalysisPort):
         if len(scores) < 3:
             return {"insufficient_data": True}
 
-        warnings = {
+        warnings: Dict[str, Any] = {
             "trend_reversal_risk": 0.0,
             "volatility_increase": 0.0,
             "momentum_loss": 0.0,

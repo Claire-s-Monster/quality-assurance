@@ -344,7 +344,7 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
     ) -> Dict[str, Any]:
         """Detect quality patterns and anti-patterns in results."""
 
-        patterns = {
+        patterns: Dict[str, Any] = {
             "total_violations": 0,
             "critical_violations": 0,
             "high_violations": 0,
@@ -364,8 +364,8 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
             "auto_fixable_count": 0,
         }
 
-        violation_files = {}
-        violation_rules = {}
+        violation_files: Dict[str, int] = {}
+        violation_rules: Dict[str, int] = {}
         coverage_values = []
         complexity_values = []
         maintainability_values = []
@@ -463,7 +463,7 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
     ) -> List[Dict[str, Any]]:
         """Prioritize quality issues by impact and effort to fix."""
 
-        issues = []
+        issues: List[Dict[str, Any]] = []
 
         for result in assessment_results:
             for violation in result.violations:
