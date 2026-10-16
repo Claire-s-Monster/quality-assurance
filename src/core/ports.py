@@ -76,67 +76,6 @@ class LoggingPort(ABC):
         pass
 
 
-class EnvironmentPort(ABC):
-    """Port for environment operations."""
-
-    @abstractmethod
-    def get_working_directory(self) -> str:
-        """Get current working directory."""
-        pass
-
-    @abstractmethod
-    def check_pixi_available(self) -> bool:
-        """Check if pixi is available."""
-        pass
-
-    @abstractmethod
-    def get_environment_variables(self) -> Dict[str, str]:
-        """Get environment variables."""
-        pass
-
-
-class ValidationPort(ABC):
-    """Port for validation operations."""
-
-    @abstractmethod
-    def validate_task_name(self, task_name: str) -> bool:
-        """Validate pixi task name."""
-        pass
-
-    @abstractmethod
-    def validate_arguments(self, args: List[str]) -> List[str]:
-        """Validate and sanitize arguments."""
-        pass
-
-
-class PixiExecutorPort(ABC):
-    """Port for pixi execution operations."""
-
-    @abstractmethod
-    def run_task(self, task_name: str, args: List[str], context: Any) -> Any:
-        """Run a pixi task."""
-        pass
-
-    @abstractmethod
-    def execute_command(self, command: List[str], context: Any) -> Any:
-        """Execute command in pixi environment."""
-        pass
-
-
-class PixiProjectPort(ABC):
-    """Port for pixi project operations."""
-
-    @abstractmethod
-    def get_project_status(self) -> Dict[str, Any]:
-        """Get pixi project status."""
-        pass
-
-    @abstractmethod
-    def task_exists(self, task_name: str) -> bool:
-        """Check if pixi task exists."""
-        pass
-
-
 # =============================================================================
 # Quality Tool Execution Ports
 # =============================================================================

@@ -8,11 +8,7 @@ as the agent-cache server, ensuring consistent architecture for quality tools.
 import os
 from pathlib import Path
 
-from adapters.environment import EnvironmentAdapter
-from adapters.execution import PixiExecutionAdapter
 from adapters.logging import LoggingAdapter
-from adapters.project import PixiProjectAdapter
-from adapters.simple_validation import SimpleValidationAdapter
 from adapters.quality_tool_execution import QualityToolExecutionAdapter
 from adapters.quality_analysis import QualityAnalysisAdapter
 from adapters.quality_trend_analysis import QualityTrendAnalysisAdapter
@@ -42,28 +38,8 @@ class Container:
 
     def _initialize_adapters(self) -> None:
         """Initialize all adapter instances."""
-        # Environment adapter
-        self._adapters["environment"] = EnvironmentAdapter(
-            working_dir=self._working_dir
-        )
-
         # Logging adapter
         self._adapters["logging"] = LoggingAdapter()
-
-        # Simple validation adapter
-        self._adapters["validation"] = SimpleValidationAdapter()
-
-        # Pixi project adapter
-        self._adapters["project"] = PixiProjectAdapter(
-            environment=self._adapters["environment"], logging=self._adapters["logging"]
-        )
-
-        # Pixi execution adapter
-        self._adapters["execution"] = PixiExecutionAdapter(
-            environment=self._adapters["environment"],
-            logging=self._adapters["logging"],
-            validation=self._adapters["validation"],
-        )
 
         # Direct pixi execution adapter
         self._adapters["direct_pixi"] = DirectPixiExecutionAdapter(
@@ -130,11 +106,6 @@ class Container:
     def orchestration_service(self) -> QualityOrchestrationService:
         """Get the quality orchestration service."""
         return self._services["orchestration"]
-
-    @property
-    def environment(self) -> EnvironmentAdapter:
-        """Get the environment adapter."""
-        return self._adapters["environment"]
 
     @property
     def logging(self) -> LoggingAdapter:
