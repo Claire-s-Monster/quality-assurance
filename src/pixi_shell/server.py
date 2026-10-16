@@ -54,7 +54,7 @@ app: FastMCP = FastMCP("pixi-shell", version="0.1.0")
 @app.tool()
 def pixi_run_task(
     task_name: str,
-    args: list[str] = [],
+    args: list[str] | None = None,
     working_dir: str | None = None,
     timeout: int = 300,
 ) -> dict[str, Any]:
@@ -74,7 +74,9 @@ def pixi_run_task(
     with proper working directory detection and environment activation.
     """
     try:
-        return container.pixi_service.run_task(task_name, args, working_dir, timeout)
+        return container.pixi_service.run_task(
+            task_name, args or [], working_dir, timeout
+        )
     except Exception as e:
         logger.error(f"Error in pixi_run_task: {e}")
         return {

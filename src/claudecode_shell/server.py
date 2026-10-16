@@ -55,7 +55,7 @@ app: FastMCP = FastMCP("claudecode-shell", version="0.1.0")
 @app.tool()
 def execute_claudecode_function(
     function_name: str,
-    args: list[str] = [],
+    args: list[str] | None = None,
     working_dir: str | None = None,
     timeout_seconds: int = 30,
 ) -> dict[str, Any]:
@@ -94,7 +94,7 @@ def execute_claudecode_function(
     """
     try:
         return container.shell_service.execute_function(
-            function_name, args, working_dir, timeout_seconds
+            function_name, args or [], working_dir, timeout_seconds
         )
     except Exception as e:
         logger.error(f"Error in execute_claudecode_function: {e}")

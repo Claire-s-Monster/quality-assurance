@@ -783,7 +783,7 @@ class DirectPixiExecutionAdapter:
         self,
         task_name: str,
         quality_tool: str,
-        target_paths: List[str] = ["src/"],
+        target_paths: Optional[List[str]] = None,
         quality_config: Dict[str, Any] = None,
         environment_optimization: bool = True,
         timeout: int = 300,
@@ -815,6 +815,8 @@ class DirectPixiExecutionAdapter:
         start_time = time.time()
         working_dir = working_dir or self.working_dir
         quality_config = quality_config or {}
+        if target_paths is None:
+            target_paths = ["src/"]
 
         try:
             # Log quality task execution start
