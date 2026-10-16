@@ -25,7 +25,7 @@ from core.models import (
     ViolationSeverity,
 )
 from core.ports import QualityToolExecutionPort
-from adapters.direct_pixi_execution import TOOL_TASK_ALIASES
+from adapters.direct_pixi_execution import TOOL_TASK_ALIASES, is_execution_failure
 
 
 class QualityToolExecutionAdapter(QualityToolExecutionPort):
@@ -1617,20 +1617,10 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         A non-zero exit does NOT imply execution failure: ruff exits 1 precisely
         when it has violations to report, and mypy exits 1 when it finds type
         errors. Those are successful runs with findings and must be parsed, not
-        turned into errors.
-
-        run_task's exception path returns exit_code=1, colliding with the
-        "found violations" code, so the exit code alone cannot discriminate.
-        The "error" key is only present on that path.
+        turned into errors. The shared rule lives in
+        adapters.direct_pixi_execution.is_execution_failure.
         """
-        if result.get("error"):
-            return True
-
-        exit_code = result.get("exit_code")
-        # 0 = clean, 1 = tool ran and reported findings. Anything else
-        # (124 timeout, 126/127 not executable / not found, 2 usage error)
-        # means the tool did not complete a real analysis.
-        return exit_code not in (0, 1)
+        return is_execution_failure(result)
 
     @staticmethod
     def _describe_execution_failure(result: Dict[str, Any], pixi_task: str) -> str:

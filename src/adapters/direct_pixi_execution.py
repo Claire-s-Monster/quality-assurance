@@ -48,6 +48,29 @@ QUALITY_ENVIRONMENT_PREFERENCE: tuple[str, ...] = (
 )
 
 
+def tool_ran_and_found_issues(result: Dict[str, Any]) -> bool:
+    """True when a pixi result is exit 1 with no "error" key.
+
+    Linters exit 1 when they FIND issues, so that is a completed run with
+    findings. run_task's exception path also reports exit_code=1 but sets
+    "error", so the "error" key is what tells the two apart.
+    """
+    return result.get("exit_code") == 1 and not result.get("error")
+
+
+def is_execution_failure(result: Dict[str, Any]) -> bool:
+    """True when the tool did not complete a real analysis.
+
+    Only exit 0 (clean) and exit 1 without "error" (findings, see
+    tool_ran_and_found_issues) are completed runs. An "error" key or any other
+    exit code (2 usage error, 124 timeout, 126/127 not executable/not found)
+    is a failure.
+    """
+    if result.get("error"):
+        return True
+    return result.get("exit_code") not in (0, 1)
+
+
 _RUFF_NON_CHECK_COMMANDS = frozenset(
     {
         "format",
@@ -1712,12 +1735,9 @@ class DirectPixiExecutionAdapter:
         # "error" key, means the tool did not run). Such a run stays
         # success=False but its parsed counts are kept -- only when the output
         # really parses to findings, so a crash is never read as a result.
-        exit_code = enhanced_result.get("exit_code")
-        found_issues = (
-            not enhanced_result["success"]
-            and exit_code == 1
-            and not enhanced_result.get("error")
-        )
+        found_issues = not enhanced_result[
+            "success"
+        ] and tool_ran_and_found_issues(enhanced_result)
 
         if (enhanced_result["success"] or found_issues) and enhanced_result["stdout"]:
             parsed_output = self._parse_quality_output(
