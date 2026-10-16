@@ -345,7 +345,7 @@ class DirectPixiExecutionAdapter:
         history = self._task_duration_history.get(task_name)
         sample_count = len(history) if history else 0
 
-        if sample_count < 3:
+        if history is None or sample_count < 3:
             return f"no duration baseline recorded for task '{task_name}' yet"
 
         median_ms = statistics.median(history)
@@ -568,7 +568,8 @@ class DirectPixiExecutionAdapter:
             with open(pyproject_toml_path, "r") as f:
                 full_config = toml.load(f)
                 if "tool" in full_config and "pixi" in full_config["tool"]:
-                    return full_config["tool"]["pixi"]
+                    pixi_config: Dict[str, Any] = full_config["tool"]["pixi"]
+                    return pixi_config
 
         return {}
 
@@ -608,7 +609,7 @@ class DirectPixiExecutionAdapter:
 
     def _get_available_tasks(
         self, path: str, environment: str | None = None
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         """Get available pixi tasks with descriptions.
 
         Collects tasks from the top-level [tool.pixi.tasks] table plus any
@@ -976,7 +977,7 @@ class DirectPixiExecutionAdapter:
         working_dir = working_dir or self.working_dir
 
         # Check cache first
-        if self._is_cache_valid():
+        if self._quality_env_cache is not None and self._is_cache_valid():
             return self._quality_env_cache
 
         try:
@@ -1156,7 +1157,7 @@ class DirectPixiExecutionAdapter:
         working_dir = working_dir or self.working_dir
 
         try:
-            optimization_results = {
+            optimization_results: Dict[str, Any] = {
                 "optimizations_applied": [],
                 "performance_improvements": {},
                 "recommendations": [],
@@ -1282,7 +1283,7 @@ class DirectPixiExecutionAdapter:
         # Performance indicators (10% of score)
         perf_score = env_info.performance_indicators.get("environment_score", 5)
 
-        total_score = tool_score + health_score + task_score + perf_score
+        total_score: float = tool_score + health_score + task_score + perf_score
         return min(100, max(0, total_score))
 
     def _generate_health_alerts(
@@ -1362,7 +1363,7 @@ class DirectPixiExecutionAdapter:
         working_dir: str,
     ) -> Dict[str, Any]:
         """Analyze if a specific quality tool is available and configured."""
-        result = {
+        result: Dict[str, Any] = {
             "available": False,
             "version": None,
             "tasks": {},
@@ -1791,7 +1792,8 @@ class DirectPixiExecutionAdapter:
             return 0
         for key in ("violation_count", "error_count", "issue_count"):
             if key in parsed_output:
-                return parsed_output[key]
+                count: int = parsed_output[key]
+                return count
         return 0
 
     def _parse_quality_output(

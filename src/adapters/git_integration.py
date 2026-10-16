@@ -41,9 +41,9 @@ class GitIntegrationAdapter:
         self.logging = logging
 
         # Cache git information for performance
-        self._git_cache = {}
+        self._git_cache: Dict[str, Any] = {}
         self._cache_timeout = 30  # seconds
-        self._last_cache_time = 0
+        self._last_cache_time: float = 0.0
 
     def get_git_metadata(self) -> Dict[str, Any]:
         """
@@ -64,7 +64,7 @@ class GitIntegrationAdapter:
 
             # Check if we're in a git repository
             if not self._is_git_repository():
-                metadata = {
+                metadata: Dict[str, Any] = {
                     "is_git_repo": False,
                     "git_available": self._is_git_available(),
                     "working_directory": str(self.working_dir),
@@ -246,7 +246,7 @@ class GitIntegrationAdapter:
             Validation result with recommendations
         """
         try:
-            validation = {
+            validation: Dict[str, Any] = {
                 "is_valid": True,
                 "warnings": [],
                 "recommendations": [],
@@ -348,7 +348,7 @@ class GitIntegrationAdapter:
 
     def _get_commit_info(self) -> Dict[str, Any]:
         """Get current commit information."""
-        info = {}
+        info: Dict[str, Any] = {}
 
         try:
             # Current commit hash
@@ -386,7 +386,7 @@ class GitIntegrationAdapter:
 
     def _get_branch_info(self) -> Dict[str, Any]:
         """Get branch information."""
-        info = {}
+        info: Dict[str, Any] = {}
 
         try:
             # Current branch
@@ -429,7 +429,7 @@ class GitIntegrationAdapter:
 
     def _get_status_info(self) -> Dict[str, Any]:
         """Get repository status information."""
-        info = {}
+        info: Dict[str, Any] = {}
 
         try:
             # Repository cleanliness
@@ -467,7 +467,7 @@ class GitIntegrationAdapter:
 
     def _get_remote_info(self) -> Dict[str, Any]:
         """Get remote repository information."""
-        info = {}
+        info: Dict[str, Any] = {}
 
         try:
             # List remotes
@@ -500,7 +500,7 @@ class GitIntegrationAdapter:
 
     def _get_config_info(self) -> Dict[str, Any]:
         """Get git configuration information."""
-        info = {}
+        info: Dict[str, Any] = {}
 
         try:
             # User name and email
