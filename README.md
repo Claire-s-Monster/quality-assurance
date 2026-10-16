@@ -1,66 +1,64 @@
-# ClaudeCode Shell MCP Server
+# quality-assurance
 
-A secure MCP server providing controlled access to claudecode_* functions, replacing unrestricted Bash tool usage with validated, safe function execution.
+Pixi-first quality assessment MCP server: lint, type-check, security, complexity, baselines and trend analysis behind a lean 3-meta-tool interface.
 
-## 🚀 Quick Start
+## Overview
+
+`quality-assurance` is an MCP server (package `src/quality_assurance`) that runs quality tooling through pixi and returns compact, structured results. The lean server (`quality_assurance.lean_server`) exposes only `discover_tools`, `get_tool_spec` and `execute_tool` to keep client context small; the HTTP transport (`quality_assurance.http_lean_server`) serves it on port **4106** at `http://127.0.0.1:4106/mcp`.
+
+Tools reachable through `execute_tool`:
+
+- Assessment: `quality_execute_lint_assessment`, `quality_execute_typecheck_assessment`, `quality_execute_security_scan`, `quality_execute_complexity_analysis`, `quality_execute_comprehensive_suite`
+- Analysis: `quality_calculate_quality_score`, `quality_generate_recommendations`, `quality_detect_quality_patterns`, `quality_prioritize_issues`
+- Baselines and trends: `quality_establish_baseline`, `quality_compare_against_baseline`, `quality_analyze_trends`
+- Fixes and reports: `quality_apply_automated_fixes`, `quality_generate_comprehensive_report`
+- Pixi integration: `quality_execute_pixi_aware_assessment`, `quality_optimize_pixi_environment`, `quality_generate_pixi_tasks`, `quality_validate_pixi_integration`
+- Health: `quality_get_system_health`
+
+See [LEAN_MCP_IMPLEMENTATION.md](LEAN_MCP_IMPLEMENTATION.md) for the lean protocol details.
+
+## Development
+
+This project is pixi-only; the package installs itself editable via `[tool.pixi.pypi-dependencies]`. Do not use pip or uv directly.
 
 ```bash
-# Install dependencies
-pixi install
+pixi install -e ci
 
-# Start the MCP server
-pixi run mcp-server
+# Tests (use -e py312 / -e py313 for a specific interpreter)
+pixi run test
+
+# Lint + type-check + tests
+pixi run -e ci quality
+
+# Start the HTTP MCP server (port 4106)
+pixi run http-server
 ```
 
-## 🔒 Security Model
+## Available Tasks
 
-- **Function Whitelist**: Only allows functions starting with `claudecode_`
-- **Argument Validation**: Sanitizes and validates all function arguments
-- **Timeout Protection**: Enforces execution timeouts (1-300 seconds)
-- **Audit Logging**: Comprehensive execution logging for security
+| Task | Environment | Description |
+|------|-------------|-------------|
+| `test` | all | Run the test suite on the selected environment's interpreter |
+| `quality` | `ci` | Run `test`, `lint` and `typecheck` |
+| `lint` / `lint-full` / `lint-fix` | `ci` | Ruff critical rules / all rules / auto-fix |
+| `format` / `format-check` | `ci` | Ruff format / verify formatting |
+| `typecheck` | `ci` | mypy over `src/` |
+| `test-cov` | default | Tests with coverage (runs in `quality` env) |
+| `static-analysis` | `quality-extended` | bandit, safety and radon |
+| `build` | `ci` | Build the distribution |
+| `http-server` | default | Start the HTTP MCP server (port 4106) |
+| `lean-server` | default | Start the lean stdio MCP server |
+| `server` | default | Start the full stdio MCP server |
 
-## 🔄 Migration Pattern
+Run `pixi task list -e <env>` for the complete list.
 
-Replace unsafe Bash usage with secure MCP calls:
+## Branch model
 
-```python
-# Before (risky)
-result = Bash("claudecode_system_info load")
+- Feature, fix and chore branches open PRs into `development` only.
+- Only `development` may open a PR into `main`; the Branch Policy check enforces this.
+- Required checks: **CI Success** (plus **Branch Policy** on PRs to `main`).
+- No direct pushes to `development` or `main`.
 
-# After (secure)  
-result = mcp__claudecode_shell__execute_claudecode_function("claudecode_system_info", ["load"])
-```
+## License
 
-## 🛠 Core Functions
-
-- `execute_claudecode_function()` - Secure function execution
-- `list_available_functions()` - Function discovery  
-- `validate_function_exists()` - Function validation
-- `get_execution_stats()` - Performance monitoring
-- `get_system_health()` - Health checks
-
-## 📋 Function Categories
-
-- `atomic` - Atomic design and refactoring
-- `git` - Git workflow and repository operations
-- `python` - Python quality and analysis
-- `quality` - Quality assurance and testing
-- `system` - System information and resources
-- `pixi` - PIXI package management
-- `ci` - CI/CD workflows
-- `security` - Security scanning
-
-## ⚡ Performance
-
-- Sub-100ms execution overhead vs direct Bash
-- Identical stdout/stderr/exit_code behavior
-- Full backward compatibility with existing functions
-- Comprehensive caching for function discovery
-
-## 🏗 Architecture
-
-Built using hexagonal architecture with:
-- **Core Domain**: Security models and business logic
-- **Ports**: Abstract interfaces for external dependencies  
-- **Adapters**: Concrete implementations for execution, logging, etc.
-- **FastMCP**: High-performance MCP server framework
+MIT License - see [LICENSE](LICENSE) for details.

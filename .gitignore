@@ -20,8 +20,13 @@ venv/
 *.swp
 *.swo
 
-# Testing
+# Testing / tool caches
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local secrets
+.env
 .coverage
 htmlcov/
 .tox/
