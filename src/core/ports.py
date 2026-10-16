@@ -385,7 +385,7 @@ class QualityReportingPort(ABC):
         assessment_results: List[QualityAssessmentResult],
         format: ReportFormat = ReportFormat.MARKDOWN,
         template: ReportTemplate = ReportTemplate.STANDARD,
-        include_sections: List[str] = None,
+        include_sections: List[str] | None = None,
         attach_raw_results: bool = False,
     ) -> QualityReport:
         """Generate detailed quality reports in multiple formats."""
@@ -467,7 +467,7 @@ class PixiIntegrationPort(ABC):
     def execute_pixi_task(
         self,
         task_name: str,
-        args: List[str] = None,
+        args: List[str] | None = None,
         working_dir: Optional[str] = None,
         timeout_seconds: int = 300,
     ) -> Dict[str, Any]:
