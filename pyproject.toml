@@ -72,11 +72,12 @@ filterwarnings = [
 
 [tool.mypy]
 python_version = "3.12"
-packages = ["quality_assurance"]
+packages = ["quality_assurance", "core", "adapters"]
 package_root = ["src"]
 namespace_packages = true
 explicit_package_bases = true
 mypy_path = "src"
+plugins = ["pydantic.mypy"]
 
 # Strictness settings (balanced approach)
 strict = false  # Start permissive, increase gradually
@@ -92,6 +93,11 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unreachable = true
 ignore_missing_imports = true  # Permissive for dependencies
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
 
 # Test directory override
 [[tool.mypy.overrides]]
@@ -131,7 +137,7 @@ ignore = [
 "tests/**/*" = ["S", "ARG", "FBT"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["quality_assurance"]
+known-first-party = ["quality_assurance", "core", "adapters"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -140,7 +146,7 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.coverage.run]
-source = ["src/quality_assurance"]  # Updated to match PIXI configuration
+source = ["src/quality_assurance", "src/core", "src/adapters"]
 branch = true
 parallel = true
 omit = [
@@ -180,7 +186,11 @@ output = "coverage.json"
 [tool.coverage.paths]
 source = [
     "src/quality_assurance",
-    "*/src/quality_assurance"
+    "*/src/quality_assurance",
+    "src/core",
+    "*/src/core",
+    "src/adapters",
+    "*/src/adapters",
 ]
 
 # =============================================================================
@@ -233,6 +243,7 @@ ruff = ">=0.7.3"
 
 # Type Checking
 mypy = ">=1.8.0"
+types-toml = ">=0.10.8"  # Stubs for toml (mypy import-untyped)
 
 [tool.pixi.feature.quality.pypi-dependencies]
 # Test utilities only available on PyPI
@@ -313,7 +324,7 @@ dev = { cmd = "pixi run install-editable", env = { PYTHONPATH = "src" } }
 
 # Testing (ZERO-TOLERANCE QUALITY GATES) - Claude Code Integration
 test = { cmd = "pixi run -e quality pytest tests/ -v --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
-test-cov = { cmd = "pixi run -e quality pytest tests/ --cov=src/quality_assurance --cov-report=term-missing --cov-report=xml --timeout=60", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
+test-cov = { cmd = "pixi run -e quality pytest tests/ --cov=src/quality_assurance --cov=src/core --cov=src/adapters --cov-report=term-missing --cov-report=xml --timeout=60", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-fast = { cmd = "pixi run -e quality pytest tests/ -x --ff --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-unit = { cmd = "pixi run -e quality pytest tests/adapters/ tests/core/ -v --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-integration = { cmd = "pixi run -e quality pytest tests/integration/ -v --timeout=60", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
@@ -360,7 +371,7 @@ check-all = { depends-on = ["quality", "static-analysis"] }
 # ===== TIER 3: CI/CD & DEPLOYMENT TASKS =====
 
 # CI-specific variants (optimized) - Claude Code Integration
-ci-test = { cmd = "pixi run -e ci pytest tests/ --cov=src/quality_assurance --cov-report=xml --timeout=90 --maxfail=1", env = { QUALITY_ASSURANCE_TEST = "1", ENVIRONMENT = "ci", PYTHONPATH = "src" } }
+ci-test = { cmd = "pixi run -e ci pytest tests/ --cov=src/quality_assurance --cov=src/core --cov=src/adapters --cov-report=xml --timeout=90 --maxfail=1", env = { QUALITY_ASSURANCE_TEST = "1", ENVIRONMENT = "ci", PYTHONPATH = "src" } }
 ci-lint = "ruff check src/ tests/ --output-format=github --select=F,E9"
 ci-format-check = "ruff format --check src/ tests/"
 ci-typecheck = "mypy src/ --no-error-summary"  # Cleaner CI output
@@ -396,7 +407,7 @@ benchmark-save = "pixi run -e quality pytest tests/ -m benchmark --benchmark-onl
 profile = "python -m memory_profiler scripts/profile_main.py"
 
 # Coverage Analysis (comprehensive - UCKN pattern)
-test-coverage = "pixi run -e quality pytest tests/ --cov=src/quality_assurance --cov-branch --cov-report=html --cov-report=xml --cov-report=json --cov-report=term-missing"
+test-coverage = "pixi run -e quality pytest tests/ --cov=src/quality_assurance --cov=src/core --cov=src/adapters --cov-branch --cov-report=html --cov-report=xml --cov-report=json --cov-report=term-missing"
 coverage-report = "coverage report --format=markdown"
 coverage-html = "coverage html"
 

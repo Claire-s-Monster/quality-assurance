@@ -183,7 +183,7 @@ class DirectPixiExecutionAdapter:
     def run_task(
         self,
         task_name: str,
-        args: List[str] = None,
+        args: List[str] | None = None,
         timeout: int = 300,
         working_dir: str | None = None,
         environment: str | None = None,
@@ -807,7 +807,7 @@ class DirectPixiExecutionAdapter:
         task_name: str,
         quality_tool: str,
         target_paths: Optional[List[str]] = None,
-        quality_config: Dict[str, Any] = None,
+        quality_config: Dict[str, Any] | None = None,
         environment_optimization: bool = True,
         timeout: int = 300,
         working_dir: str | None = None,
@@ -956,7 +956,7 @@ class DirectPixiExecutionAdapter:
             }
 
     def detect_quality_environment(
-        self, working_dir: str = None
+        self, working_dir: str | None = None
     ) -> QualityEnvironmentInfo:
         """
         Detect quality tools available in pixi environment.
@@ -1135,7 +1135,7 @@ class DirectPixiExecutionAdapter:
             )
 
     def optimize_quality_environment(
-        self, required_tools: List[str], working_dir: str = None
+        self, required_tools: List[str], working_dir: str | None = None
     ) -> Dict[str, Any]:
         """
         Optimize pixi environment for quality tool execution.
@@ -1205,7 +1205,7 @@ class DirectPixiExecutionAdapter:
 
     def monitor_environment_health(
         self,
-        working_dir: str = None,
+        working_dir: str | None = None,
         continuous_monitoring: bool = False,
         health_check_interval: int = 300,  # 5 minutes
     ) -> Dict[str, Any]:
