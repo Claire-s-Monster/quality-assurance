@@ -300,15 +300,17 @@ mkdocs-material = ">=9.0.0"
 default = {solve-group = "default"}
 
 # Tiered quality environments (CI Framework proven approach)
-quality = {features = ["quality"], solve-group = "default"}                                    # ~90s install - Essential quality
-quality-extended = {features = ["quality", "quality-extended"], solve-group = "default"}      # ~150s install - Full quality
+# The *-gates / ci-build features hold only tasks (no dependencies). Each is
+# attached to exactly one environment so `pixi run <task>` is never ambiguous.
+quality = {features = ["quality", "quality-gates"], solve-group = "default"}                  # ~90s install - Essential quality
+quality-extended = {features = ["quality", "quality-extended", "security-gates"], solve-group = "default"} # ~150s install - Full quality
 quality-full = {features = ["quality", "quality-extended", "quality-ci"], solve-group = "default"} # ~180s install - Complete pipeline
 
 # Development environment (full tooling)
 dev = {features = ["quality", "quality-extended", "quality-ci", "dev-specialized"], solve-group = "default"} # ~250s install
 
 # CI environment (optimized for CI performance)
-ci = {features = ["quality", "quality-ci"], solve-group = "default"}  # ~120s install - CI optimized
+ci = {features = ["quality", "quality-ci", "ci-build"], solve-group = "default"}  # ~120s install - CI optimized
 
 # =============================================================================
 # PIXI TASKS (Unified Best Practices from All Projects)
@@ -331,53 +333,32 @@ test-integration = { cmd = "pixi run -e quality pytest tests/integration/ -v --t
 test-e2e = { cmd = "pixi run -e quality pytest tests/e2e/ -v --timeout=120", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-property = { cmd = "pixi run -e quality pytest tests/ -m property -v --timeout=60", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 
-# Quality Gates (CRITICAL - MUST PASS) - PREVENT CI FAILURES
-lint = "ruff check src/ tests/ --select=F,E9"        # Critical violations only
-lint-full = "ruff check src/ tests/"                  # Full linting
-lint-fix = "ruff check --fix src/ tests/"             # Auto-fix violations
-format = "ruff format src/ tests/"                    # Format code
-format-check = "ruff format --check src/ tests/"      # Format validation
-format-diff = "ruff format --diff src/ tests/"        # Show formatting changes
-typecheck = "mypy src/"
-
-# Combined Quality Check - MANDATORY BEFORE COMMIT
-quality = { depends-on = ["test", "lint", "typecheck"] }
+# Quality Gates (lint, format, typecheck, quality) live in
+# [tool.pixi.feature.quality-gates.tasks] below: ruff/mypy are not in the default env.
 
 # LOCAL Development Quality Gates - Comprehensive validation
 quality-local = { cmd = "python scripts/local-quality-check.py", depends-on = ["dev-setup"] }
-
-# Pre-commit Integration - PREVENT CI FAILURES
-pre-commit = { cmd = "pre-commit run --all-files", env = { QUALITY_ASSURANCE_TEST = "1" } }
-install-pre-commit = { cmd = "pre-commit install --install-hooks", env = { QUALITY_ASSURANCE_TEST = "1" } }
 
 # Emergency Quality Fix - USE FOR "Found X errors" CI FAILURES
 emergency-fix = "pixi run lint-fix && pixi run format && pixi run test"
 
 # ===== TIER 2: SECURITY & COMPLIANCE TASKS =====
 
-# Security Scanning (CI Framework patterns)
-security-scan = "bandit -r src/ --severity-level high --exclude tests/"
-safety-check = "safety check --ignore=70929 --ignore=70912"  # Common false positives
-pip-audit-scan = "pip-audit --verbose --desc"
-complexity-check = "radon cc src/ --min B"
-dead-code-check = "vulture src/ --min-confidence 80"
-
-# Static Analysis Suite
-static-analysis = { depends-on = ["security-scan", "safety-check", "complexity-check"] }
-
-# Comprehensive Check (includes security)
-check-all = { depends-on = ["quality", "static-analysis"] }
+# Security scanning and static analysis (bandit, safety, pip-audit, radon,
+# vulture, pre-commit) live in [tool.pixi.feature.security-gates.tasks] below.
 
 # ===== TIER 3: CI/CD & DEPLOYMENT TASKS =====
 
 # CI-specific variants (optimized) - Claude Code Integration
 ci-test = { cmd = "pixi run -e ci pytest tests/ --cov=src/quality_assurance --cov=src/core --cov=src/adapters --cov-report=xml --timeout=90 --maxfail=1", env = { QUALITY_ASSURANCE_TEST = "1", ENVIRONMENT = "ci", PYTHONPATH = "src" } }
-ci-lint = "ruff check src/ tests/ --output-format=github --select=F,E9"
-ci-format-check = "ruff format --check src/ tests/"
-ci-typecheck = "mypy src/ --no-error-summary"  # Cleaner CI output
+# ci-lint, ci-format-check, ci-typecheck: see [tool.pixi.feature.quality-gates.tasks]
+# build: see [tool.pixi.feature.ci-build.tasks]
 
-# Build & Deploy
-build = "python -m build --no-isolation"
+# Comprehensive Check (includes security). Spans the quality and quality-extended
+# envs, so it chains two single-env tasks (same pattern as emergency-fix).
+check-all = "pixi run quality && pixi run static-analysis"
+
+# Cleanup
 clean = "rm -rf __pycache__ .pytest_cache .coverage htmlcov .ruff_cache .mypy_cache dist build *.egg-info"
 clean-envs = "rm -rf .pixi/envs/quality* .pixi/envs/ci .pixi/envs/dev"  # Environment cleanup
 
@@ -402,16 +383,61 @@ validate-quality = { cmd = "python -m quality_assurance.validator", env = { PYTH
 # ===== LEGACY/SPECIALIZED TASKS =====
 
 # Performance & Benchmarking
-benchmark = "pixi run -e quality pytest tests/ -m benchmark --benchmark-only --benchmark-sort=mean"
-benchmark-save = "pixi run -e quality pytest tests/ -m benchmark --benchmark-only --benchmark-save=baseline"
-profile = "python -m memory_profiler scripts/profile_main.py"
+# pytest-benchmark is provided by the quality-ci feature (ci env), not quality
+benchmark = "pixi run -e ci pytest tests/ -m benchmark --benchmark-only --benchmark-sort=mean"
+benchmark-save = "pixi run -e ci pytest tests/ -m benchmark --benchmark-only --benchmark-save=baseline"
+# profile, docs-serve, docs-build: see [tool.pixi.feature.dev-specialized.tasks]
 
 # Coverage Analysis (comprehensive - UCKN pattern)
 test-coverage = "pixi run -e quality pytest tests/ --cov=src/quality_assurance --cov=src/core --cov=src/adapters --cov-branch --cov-report=html --cov-report=xml --cov-report=json --cov-report=term-missing"
+# coverage-report, coverage-html: see [tool.pixi.feature.quality-gates.tasks]
+
+# =============================================================================
+# FEATURE-SCOPED TASKS (run in the env whose feature provides the tool)
+# =============================================================================
+[tool.pixi.feature.quality-gates.tasks]
+# Quality Gates (CRITICAL - MUST PASS) - PREVENT CI FAILURES
+lint = "ruff check src/ tests/ --select=F,E9"        # Critical violations only
+lint-full = "ruff check src/ tests/"                  # Full linting
+lint-fix = "ruff check --fix src/ tests/"             # Auto-fix violations
+format = "ruff format src/ tests/"                    # Format code
+format-check = "ruff format --check src/ tests/"      # Format validation
+format-diff = "ruff format --diff src/ tests/"        # Show formatting changes
+typecheck = "mypy src/"
+
+# Combined Quality Check - MANDATORY BEFORE COMMIT
+quality = { depends-on = ["test", "lint", "typecheck"] }
+
+# CI variants
+ci-lint = "ruff check src/ tests/ --output-format=github --select=F,E9"
+ci-format-check = "ruff format --check src/ tests/"
+ci-typecheck = "mypy src/ --no-error-summary"  # Cleaner CI output
+
+# Coverage reports (coverage is a dependency of pytest-cov)
 coverage-report = "coverage report --format=markdown"
 coverage-html = "coverage html"
 
-# Documentation
+[tool.pixi.feature.security-gates.tasks]
+# Security Scanning (CI Framework patterns)
+security-scan = "bandit -r src/ --severity-level high --exclude tests/"
+safety-check = "safety check --ignore=70929 --ignore=70912"  # Common false positives
+pip-audit-scan = "pip-audit --verbose --desc"
+complexity-check = "radon cc src/ --min B"
+dead-code-check = "vulture src/ --min-confidence 80"
+
+# Static Analysis Suite
+static-analysis = { depends-on = ["security-scan", "safety-check", "complexity-check"] }
+
+# Pre-commit Integration - PREVENT CI FAILURES
+pre-commit = { cmd = "pre-commit run --all-files", env = { QUALITY_ASSURANCE_TEST = "1" } }
+install-pre-commit = { cmd = "pre-commit install --install-hooks", env = { QUALITY_ASSURANCE_TEST = "1" } }
+
+[tool.pixi.feature.ci-build.tasks]
+# Build & Deploy
+build = "python -m build --no-isolation"
+
+[tool.pixi.feature.dev-specialized.tasks]
+profile = "python -m memory_profiler scripts/profile_main.py"
 docs-serve = "mkdocs serve"
 docs-build = "mkdocs build"
 
