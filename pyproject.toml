@@ -302,13 +302,14 @@ mkdocs-material = ">=9.0.0"
 # =============================================================================
 [tool.pixi.environments]
 # Basic runtime environment (minimal footprint)
-default = {solve-group = "default"}
+default = {features = ["quality"], solve-group = "default"}  # includes pytest so bare `pixi run test` works
 
 # Tiered quality environments (CI Framework proven approach)
 # The *-gates / ci-build features hold only tasks (no dependencies). Each is
 # attached to exactly one environment so `pixi run <task>` is not ambiguous
-# (quality-gates -> ci). `test` is the exception: the reusable CI workflow needs
-# it in ci and in every py<NNN> environment, so pass `-e <env>` for it.
+# (quality-gates -> ci). `test` is a default-feature task identical in every env,
+# so bare `pixi run test` is unambiguous and the CI workflow's `-e <env> test`
+# runs on that environment's interpreter.
 quality = {features = ["quality"], solve-group = "default"}                                   # ~90s install - Essential quality tools
 quality-extended = {features = ["quality", "quality-extended", "security-gates"], solve-group = "default"} # ~150s install - Full quality
 quality-full = {features = ["quality", "quality-extended", "quality-ci"], solve-group = "default"} # ~180s install - Complete pipeline
@@ -317,12 +318,12 @@ quality-full = {features = ["quality", "quality-extended", "quality-ci"], solve-
 dev = {features = ["quality", "quality-extended", "quality-ci", "dev-specialized"], solve-group = "default"} # ~250s install
 
 # CI environment (optimized for CI performance)
-ci = {features = ["quality", "quality-ci", "ci-build", "quality-gates", "env-test"], solve-group = "default"}  # ~120s install - CI optimized
+ci = {features = ["quality", "quality-ci", "ci-build", "quality-gates"], solve-group = "default"}  # ~120s install - CI optimized
 
 # Per-Python-version CI environments (ci-framework pattern "py{nodot}"): each
 # matrix leg of the reusable workflow runs `test` on its own interpreter.
-py312 = {features = ["quality", "quality-ci", "env-test", "py312"], solve-group = "py312"}
-py313 = {features = ["quality", "quality-ci", "env-test", "py313"], solve-group = "py313"}
+py312 = {features = ["quality", "quality-ci", "py312"], solve-group = "py312"}
+py313 = {features = ["quality", "quality-ci", "py313"], solve-group = "py313"}
 
 # =============================================================================
 # PIXI TASKS (Unified Best Practices from All Projects)
@@ -335,7 +336,7 @@ py313 = {features = ["quality", "quality-ci", "env-test", "py313"], solve-group 
 dev-setup = { cmd = "echo 'Development environment ready'", env = { PYTHONPATH = "src" } }
 
 # Testing (ZERO-TOLERANCE QUALITY GATES) - Claude Code Integration
-test = { cmd = "pixi run -e quality pytest tests/ -v --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
+test = { cmd = "pytest tests/ -v --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-cov = { cmd = "pixi run -e quality pytest tests/ --cov=src/quality_assurance --cov=src/core --cov=src/adapters --cov-report=term-missing --cov-report=xml --timeout=60", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-fast = { cmd = "pixi run -e quality pytest tests/ -x --ff --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 test-unit = { cmd = "pixi run -e quality pytest tests/adapters/ tests/core/ -v --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
@@ -440,11 +441,6 @@ python = "3.12.*"
 
 [tool.pixi.feature.py313.dependencies]
 python = "3.13.*"
-
-# In-environment `test`: overrides the default (nested `-e quality`) task so the
-# reusable CI workflow tests the interpreter of the environment it selected.
-[tool.pixi.feature.env-test.tasks]
-test = { cmd = "pytest tests/ -v --timeout=30", env = { QUALITY_ASSURANCE_TEST = "1", PYTHONPATH = "src" } }
 
 [tool.pixi.feature.ci-build.tasks]
 # Build & Deploy

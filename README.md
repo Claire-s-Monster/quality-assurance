@@ -24,8 +24,8 @@ This project is pixi-only; the package installs itself editable via `[tool.pixi.
 ```bash
 pixi install -e ci
 
-# Tests (pass -e: `test` exists in ci, py312 and py313)
-pixi run -e ci test
+# Tests (use -e py312 / -e py313 for a specific interpreter)
+pixi run test
 
 # Lint + type-check + tests
 pixi run -e ci quality
@@ -38,7 +38,7 @@ pixi run http-server
 
 | Task | Environment | Description |
 |------|-------------|-------------|
-| `test` | `ci`, `py312`, `py313` | Run the test suite on that environment's interpreter |
+| `test` | all | Run the test suite on the selected environment's interpreter |
 | `quality` | `ci` | Run `test`, `lint` and `typecheck` |
 | `lint` / `lint-full` / `lint-fix` | `ci` | Ruff critical rules / all rules / auto-fix |
 | `format` / `format-check` | `ci` | Ruff format / verify formatting |
