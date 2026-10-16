@@ -336,9 +336,6 @@ test-property = { cmd = "pixi run -e quality pytest tests/ -m property -v --time
 # Quality Gates (lint, format, typecheck, quality) live in
 # [tool.pixi.feature.quality-gates.tasks] below: ruff/mypy are not in the default env.
 
-# LOCAL Development Quality Gates - Comprehensive validation
-quality-local = { cmd = "python scripts/local-quality-check.py", depends-on = ["dev-setup"] }
-
 # Emergency Quality Fix - USE FOR "Found X errors" CI FAILURES
 emergency-fix = "pixi run lint-fix && pixi run format && pixi run test"
 
@@ -376,17 +373,13 @@ lean-mcp = { cmd = "python -m quality_assurance.lean_server", env = { PYTHONPATH
 http-server = { cmd = "python -m quality_assurance.http_lean_server", env = { PYTHONPATH = "src" } }
 http-lean-server = { cmd = "python -m quality_assurance.http_lean_server", env = { PYTHONPATH = "src" } }
 
-# Quality assurance tools and validation
-list-tasks = { cmd = "python -m quality_assurance.discovery", env = { PYTHONPATH = "src" } }
-validate-quality = { cmd = "python -m quality_assurance.validator", env = { PYTHONPATH = "src" } }
-
 # ===== LEGACY/SPECIALIZED TASKS =====
 
 # Performance & Benchmarking
 # pytest-benchmark is provided by the quality-ci feature (ci env), not quality
 benchmark = "pixi run -e ci pytest tests/ -m benchmark --benchmark-only --benchmark-sort=mean"
 benchmark-save = "pixi run -e ci pytest tests/ -m benchmark --benchmark-only --benchmark-save=baseline"
-# profile, docs-serve, docs-build: see [tool.pixi.feature.dev-specialized.tasks]
+# docs-serve, docs-build: see [tool.pixi.feature.dev-specialized.tasks]
 
 # Coverage Analysis (comprehensive - UCKN pattern)
 test-coverage = "pixi run -e quality pytest tests/ --cov=src/quality_assurance --cov=src/core --cov=src/adapters --cov-branch --cov-report=html --cov-report=xml --cov-report=json --cov-report=term-missing"
@@ -437,7 +430,6 @@ install-pre-commit = { cmd = "pre-commit install --install-hooks", env = { QUALI
 build = "python -m build --no-isolation"
 
 [tool.pixi.feature.dev-specialized.tasks]
-profile = "python -m memory_profiler scripts/profile_main.py"
 docs-serve = "mkdocs serve"
 docs-build = "mkdocs build"
 
