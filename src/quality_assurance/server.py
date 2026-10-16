@@ -6,6 +6,7 @@ Consolidates 26 quality functions into 14 intelligent functions with 60%+ reduct
 using pixi-first execution and the QualityOrchestrationService business logic layer.
 """
 
+import logging
 import sys
 import os
 from typing import List, Dict, Any, Optional
@@ -28,8 +29,10 @@ from core.models import (
     ReportTemplate,
 )
 
+_log = logging.getLogger(__name__)
+
 # Initialize FastMCP app
-app = FastMCP("Quality Assurance MCP Server")
+app =FastMCP("Quality Assurance MCP Server")
 
 # Global container and service instances
 container = None
@@ -1097,8 +1100,9 @@ def quality_detect_quality_patterns(
                         project_name="current_project", limit=10
                     )
                 )
-            except Exception:  # noqa: S110 -- history lookup is optional; the empty-results error below covers failure
-                pass
+            except Exception as e:
+                # History lookup is optional; the empty-results error below covers failure.
+                _log.debug("assessment history lookup failed: %s", e)
 
         if not converted_results:
             return {
@@ -1193,8 +1197,9 @@ def quality_prioritize_issues(
                         project_name="current_project", limit=10
                     )
                 )
-            except Exception:  # noqa: S110 -- history lookup is optional; the empty-results error below covers failure
-                pass
+            except Exception as e:
+                # History lookup is optional; the empty-results error below covers failure.
+                _log.debug("assessment history lookup failed: %s", e)
 
         if not converted_results:
             return {

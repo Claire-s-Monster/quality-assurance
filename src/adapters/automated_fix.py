@@ -8,6 +8,7 @@ and thorough pre/post-fix testing.
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -28,6 +29,8 @@ from core.models import (
     QualityMetrics,
 )
 from core.ports import AutomatedFixPort
+
+_log = logging.getLogger(__name__)
 
 
 class AutomatedFixAdapter(AutomatedFixPort):
@@ -1042,11 +1045,14 @@ class AutomatedFixAdapter(AutomatedFixPort):
                         backup_time = backup_path.stat().st_ctime
                         if backup_time < cutoff_time:
                             shutil.rmtree(backup_path)
-                    except Exception:  # noqa: S112 -- best-effort cleanup; skip backups that cannot be removed
+                    except OSError as e:
+                        # Best-effort cleanup: skip backups that cannot be removed.
+                        _log.debug("could not remove old backup %s: %s", backup_path, e)
                         continue
 
-        except Exception:  # noqa: S110 -- best-effort cleanup must never fail the calling operation
-            pass
+        except Exception as e:
+            # Best-effort cleanup must never fail the calling operation.
+            _log.debug("old-backup cleanup failed: %s", e)
 
     def _verify_backup_integrity(
         self, backup_dir: Path, metadata: Dict[str, Any]

@@ -7,6 +7,7 @@ comprehensive data integrity validation.
 """
 
 import json
+import logging
 import shutil
 import threading
 import time
@@ -21,6 +22,8 @@ from core.models import (
     OperationResult,
 )
 from core.ports import QualityDataStoragePort
+
+_log = logging.getLogger(__name__)
 
 
 class QualityDataStorageAdapter(QualityDataStoragePort):
@@ -887,5 +890,6 @@ class QualityDataStorageAdapter(QualityDataStoragePort):
             with self._locks_lock:
                 self._file_locks.clear()
 
-        except Exception:  # noqa: S110 -- shutdown cleanup is best-effort and must not raise
-            pass
+        except Exception as e:
+            # Shutdown cleanup is best-effort and must not raise.
+            _log.debug("storage cleanup failed: %s", e)

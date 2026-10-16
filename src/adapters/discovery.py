@@ -3,6 +3,7 @@ Agent discovery adapter for finding and cataloging agents in the ecosystem.
 Handles parsing agent frontmatter and directory scanning.
 """
 
+import logging
 import re
 import toml
 import yaml
@@ -26,6 +27,8 @@ from core.models import (
     SecurityViolation,
 )
 from adapters.filesystem import FilesystemAdapter
+
+_log = logging.getLogger(__name__)
 
 
 class AgentDiscoveryAdapter(AgentDiscoveryPort):
@@ -103,7 +106,9 @@ class AgentDiscoveryAdapter(AgentDiscoveryPort):
                             or agent.classification.category in categories
                         ):
                             agents.append(agent)
-                except Exception:  # noqa: S112 -- one unparsable agent file must not abort discovery
+                except Exception as e:
+                    # One unparsable agent file must not abort discovery.
+                    _log.debug("skipping unparsable agent file %s: %s", agent_file, e)
                     continue
 
         except PermissionError as err:

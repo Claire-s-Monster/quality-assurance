@@ -2,6 +2,7 @@
 Pixi project adapter for managing pixi project information and operations.
 """
 
+import logging
 import os
 import subprocess
 import time
@@ -17,6 +18,8 @@ from core.models import (
     PixiEnvironmentInfo,
 )
 from core.ports import PixiProjectPort, LoggingPort, EnvironmentPort
+
+_log = logging.getLogger(__name__)
 
 
 class PixiProjectAdapter(PixiProjectPort):
@@ -435,8 +438,8 @@ class PixiProjectAdapter(PixiProjectPort):
                     )
                     if result.returncode == 0:
                         python_version = result.stdout.strip()
-            except Exception:  # noqa: S110 -- python probe is best-effort; fall back to defaults
-                pass
+            except (OSError, subprocess.SubprocessError) as e:
+                _log.debug("python probe failed for %s: %s", environment_path, e)
 
             # Calculate environment size
             environment_size_mb = 0.0
@@ -447,8 +450,8 @@ class PixiProjectAdapter(PixiProjectPort):
                     if f.is_file()
                 )
                 environment_size_mb = total_size / (1024 * 1024)
-            except Exception:  # noqa: S110 -- size estimate is best-effort; default 0.0 is reported
-                pass
+            except OSError as e:
+                _log.debug("size estimate failed for %s: %s", environment_path, e)
 
             # Count packages (simplified)
             package_count = 0
@@ -456,8 +459,8 @@ class PixiProjectAdapter(PixiProjectPort):
                 conda_meta_path = Path(environment_path) / "conda-meta"
                 if conda_meta_path.exists():
                     package_count = len(list(conda_meta_path.glob("*.json")))
-            except Exception:  # noqa: S110 -- package count is best-effort; default 0 is reported
-                pass
+            except OSError as e:
+                _log.debug("package count failed for %s: %s", environment_path, e)
 
             return PixiEnvironmentInfo(
                 environment_path=environment_path,
@@ -500,8 +503,8 @@ class PixiProjectAdapter(PixiProjectPort):
             if env_path.exists():
                 return str(env_path)
 
-        except Exception:  # noqa: S110 -- env path lookup is best-effort; None signals not found
-            pass
+        except (OSError, subprocess.SubprocessError) as e:
+            _log.debug("environment path lookup failed for %s: %s", path, e)
 
         return None
 
@@ -546,8 +549,8 @@ class PixiProjectAdapter(PixiProjectPort):
                     )
                     if result.returncode == 0:
                         return result.stdout.strip()
-        except Exception:  # noqa: S110 -- version lookup is best-effort; None signals unknown
-            pass
+        except (OSError, subprocess.SubprocessError) as e:
+            _log.debug("python version lookup failed for %s: %s", path, e)
 
         return None
 

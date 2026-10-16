@@ -11,6 +11,7 @@ Enhanced with quality intelligence for quality-focused task orchestration includ
 """
 
 import json
+import logging
 import os
 import re
 import shlex
@@ -24,6 +25,8 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from core.ports import LoggingPort
+
+_log = logging.getLogger(__name__)
 
 
 TOOL_TASK_ALIASES: Dict[str, tuple[str, ...]] = {
@@ -1373,7 +1376,9 @@ class DirectPixiExecutionAdapter:
                     )
                     if result.returncode == 0:
                         return result.stdout.strip().split("\n")[0]
-                except:  # noqa: S112, E722 -- try the next version-probe command if this one fails
+                except (OSError, subprocess.SubprocessError) as e:
+                    # Try the next version-probe command if this one fails.
+                    _log.debug("version probe %s failed: %s", cmd, e)
                     continue
 
             return None

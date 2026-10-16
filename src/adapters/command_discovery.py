@@ -3,6 +3,7 @@ Command discovery adapter for finding and analyzing Claude Code commands.
 Handles scanning command directories and parsing agent references.
 """
 
+import logging
 import re
 import hashlib
 from pathlib import Path
@@ -20,6 +21,8 @@ from core.models import (
     SecurityViolation,
 )
 from adapters.filesystem import FilesystemAdapter
+
+_log = logging.getLogger(__name__)
 
 
 class CommandDiscoveryAdapter(CommandDiscoveryPort):
@@ -148,7 +151,11 @@ class CommandDiscoveryAdapter(CommandDiscoveryPort):
                                 or command.command_type.value in command_types
                             ):
                                 commands.append(command)
-                    except Exception:  # noqa: S112 -- one unparsable command file must not abort discovery
+                    except Exception as e:
+                        # One unparsable command file must not abort discovery.
+                        _log.debug(
+                            "skipping unparsable command file %s: %s", command_file, e
+                        )
                         continue
 
         except PermissionError as err:
@@ -262,8 +269,9 @@ class CommandDiscoveryAdapter(CommandDiscoveryPort):
                     frontmatter = yaml.safe_load(frontmatter_text)
                     if isinstance(frontmatter, dict):
                         metadata.update(frontmatter)
-            except:  # noqa: S110, E722 -- malformed frontmatter is optional metadata; ignore and use defaults
-                pass
+            except Exception as e:
+                # Malformed frontmatter is optional metadata; fall back to defaults.
+                _log.debug("ignoring malformed command frontmatter: %s", e)
 
         # Look for common metadata patterns in content
         patterns = {
@@ -392,8 +400,9 @@ class CommandDiscoveryAdapter(CommandDiscoveryPort):
                     if query_lower in content.lower():
                         matching_commands.append(command)
                         continue
-                except:  # noqa: S110, E722 -- unreadable command files are skipped in content search
-                    pass
+                except Exception as e:
+                    # Unreadable command files are skipped in content search.
+                    _log.debug("skipping unreadable command %s: %s", command.path, e)
 
         return matching_commands
 
