@@ -1735,9 +1735,9 @@ class DirectPixiExecutionAdapter:
         # "error" key, means the tool did not run). Such a run stays
         # success=False but its parsed counts are kept -- only when the output
         # really parses to findings, so a crash is never read as a result.
-        found_issues = not enhanced_result[
-            "success"
-        ] and tool_ran_and_found_issues(enhanced_result)
+        found_issues = not enhanced_result["success"] and tool_ran_and_found_issues(
+            enhanced_result
+        )
 
         if (enhanced_result["success"] or found_issues) and enhanced_result["stdout"]:
             parsed_output = self._parse_quality_output(

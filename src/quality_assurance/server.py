@@ -32,7 +32,7 @@ from core.models import (
 _log = logging.getLogger(__name__)
 
 # Initialize FastMCP app
-app =FastMCP("Quality Assurance MCP Server")
+app = FastMCP("Quality Assurance MCP Server")
 
 # Global container and service instances
 container = None
