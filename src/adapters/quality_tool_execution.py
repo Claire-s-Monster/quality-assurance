@@ -86,6 +86,15 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         return selected, True, [note]
 
     @staticmethod
+    def _targets_tests(target_paths: Optional[List[str]]) -> bool:
+        """Whether any explicit target path is `tests` or lies under it."""
+        for path in target_paths or []:
+            parts = [p for p in path.replace("\\", "/").split("/") if p not in ("", ".")]
+            if parts and parts[0] == "tests":
+                return True
+        return False
+
+    @staticmethod
     def _swap_path_tokens(tokens: List[str], target_paths: List[str]) -> List[str]:
         """Replace the task body's positional src/tests paths with target_paths.
 
@@ -131,25 +140,33 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         workdir = project_path or executor.working_dir
         body = executor._get_available_tasks(workdir, environment).get(pixi_task)
         body_env, tokens = None, None
+        reason = f"task '{pixi_task}' body not found"
         if body:
-            body_env, tokens, _ = executor._parse_task_body_args(body, tool.value)
+            body_env, tokens, reason = executor._parse_task_body_args(body, tool.value)
         if tokens is None:
-            result: Dict[str, Any] = executor.run_task(
-                pixi_task,
-                args=[*extra_args, *(path_flag or []), *target_paths],
+            result: Dict[str, Any] = dict(
+                executor.run_task(
+                    pixi_task,
+                    args=[*extra_args, *(path_flag or []), *target_paths],
+                    timeout=300,
+                    working_dir=project_path,
+                    environment=environment,
+                )
+            )
+            result["target_paths_mode"] = "appended"
+            result["target_paths_fallback_reason"] = reason
+            return result
+        result = dict(
+            executor.run_task(
+                tool.value,
+                args=[*self._swap_path_tokens(tokens, target_paths), *extra_args],
                 timeout=300,
                 working_dir=project_path,
-                environment=environment,
+                environment=environment or body_env,
+                as_command=True,
             )
-            return result
-        result = executor.run_task(
-            tool.value,
-            args=[*self._swap_path_tokens(tokens, target_paths), *extra_args],
-            timeout=300,
-            working_dir=project_path,
-            environment=environment or body_env,
-            as_command=True,
         )
+        result["target_paths_mode"] = "replaced"
         return result
 
     def _describe_task_not_found(
@@ -320,6 +337,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 pixi_task_used=pixi_task,
                 environment_used=environment,
                 environment_auto_selected=env_auto,
+                target_paths_mode=result.get("target_paths_mode"),
+                target_paths_fallback_reason=result.get("target_paths_fallback_reason"),
                 target_path=target_path,
                 files_analyzed=metrics.total_lines // 50
                 if metrics.total_lines > 0
@@ -493,6 +512,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 pixi_task_used=pixi_task,
                 environment_used=environment,
                 environment_auto_selected=env_auto,
+                target_paths_mode=result.get("target_paths_mode"),
+                target_paths_fallback_reason=result.get("target_paths_fallback_reason"),
                 target_path=target_path,
                 files_analyzed=len(set(v.file_path for v in violations))
                 if violations
@@ -571,8 +592,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             if bandit_severity != "all":
                 args.extend(["-ll" if bandit_severity == "high" else "-l"])
 
-            # Exclude test files if requested
-            if exclude_tests:
+            # Exclude test files if requested -- unless the caller explicitly
+            # targets tests, which the default exclusion would silently empty.
+            if exclude_tests and not self._targets_tests(target_paths):
                 args.extend(["--exclude", "tests,test,*_test.py,test_*.py"])
 
             # Add recursive scan on target path
@@ -678,6 +700,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 pixi_task_used=pixi_task,
                 environment_used=environment,
                 environment_auto_selected=env_auto,
+                target_paths_mode=result.get("target_paths_mode"),
+                target_paths_fallback_reason=result.get("target_paths_fallback_reason"),
                 target_path=target_path,
                 files_analyzed=len(set(issue.file_path for issue in security_issues))
                 if security_issues
@@ -1000,6 +1024,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 pixi_task_used=pixi_task,
                 environment_used=environment,
                 environment_auto_selected=env_auto,
+                target_paths_mode=result.get("target_paths_mode"),
+                target_paths_fallback_reason=result.get("target_paths_fallback_reason"),
                 target_path=target_path,
                 files_analyzed=len(set(dcr.file_path for dcr in dead_code_results))
                 if dead_code_results

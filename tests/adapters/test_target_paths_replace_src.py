@@ -93,6 +93,57 @@ def test_bandit_keeps_recursive_flag_and_exclude():
     assert args[args.index("--exclude") + 1] == "tests/"
 
 
+EXCLUDE_DEFAULT = "tests,test,*_test.py,test_*.py"
+
+
+@pytest.mark.parametrize("paths", [["tests"], ["tests/"], ["tests/unit"], ["src/", "tests/x.py"]])
+def test_bandit_does_not_exclude_tests_when_targeted(paths):
+    _, args, _ = _run(QualityTool.BANDIT, paths)
+
+    assert EXCLUDE_DEFAULT not in args
+
+
+@pytest.mark.parametrize("paths", [None, ["lib/"], ["src/testsuite"], ["contests/"]])
+def test_bandit_keeps_default_exclude_when_tests_not_targeted(paths):
+    _, args, _ = _run(QualityTool.BANDIT, paths)
+
+    assert EXCLUDE_DEFAULT in args
+
+
+def _run_result(tool, body):
+    executor = FakeExecutor()
+    executor._get_available_tasks = lambda path, environment=None: {
+        "lint": body,
+        "typecheck": body,
+        "security-scan": body,
+    }
+    adapter = QualityToolExecutionAdapter(executor)
+    return adapter.execute_typecheck_assessment(tool=tool, target_paths=["lib/"])
+
+
+def test_parsed_body_reports_replaced_mode():
+    result = _run_result(QualityTool.MYPY, "mypy src/")
+
+    assert result.target_paths_mode == "replaced"
+    assert result.target_paths_fallback_reason is None
+
+
+def test_unparseable_body_reports_appended_mode_with_reason():
+    result = _run_result(QualityTool.MYPY, "mypy src/ && echo done")
+
+    assert result.target_paths_mode == "appended"
+    assert result.target_paths_fallback_reason
+
+
+def test_default_run_has_no_target_paths_mode():
+    executor = FakeExecutor()
+    adapter = QualityToolExecutionAdapter(executor)
+
+    result = adapter.execute_typecheck_assessment(tool=QualityTool.MYPY)
+
+    assert result.target_paths_mode is None
+
+
 @pytest.mark.parametrize(
     "tool",
     [QualityTool.RUFF, QualityTool.MYPY, QualityTool.BANDIT, QualityTool.VULTURE],

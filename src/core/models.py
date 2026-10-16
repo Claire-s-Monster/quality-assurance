@@ -212,6 +212,18 @@ class QualityAssessmentResult(BaseModel):
         default=False, description="Whether the environment was chosen automatically"
     )
 
+    target_paths_mode: Optional[str] = Field(
+        None,
+        description=(
+            "How suite target_paths were applied: 'replaced' (task's paths swapped) "
+            "or 'appended' (task ran as-is with paths added, so src/ is still "
+            "scanned). None when target_paths was not used."
+        ),
+    )
+    target_paths_fallback_reason: Optional[str] = Field(
+        None, description="Why target_paths were appended instead of replacing"
+    )
+
     # Assessment scope
     target_path: str = Field(description="Path that was assessed")
     files_analyzed: int = Field(description="Number of files analyzed")

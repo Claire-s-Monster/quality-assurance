@@ -842,6 +842,18 @@ def quality_execute_comprehensive_suite(
         # Execute comprehensive suite
         result = _require_orchestration().execute_comprehensive_suite(suite_config)
 
+        appended = [
+            f"{res.tool.value} ({res.target_paths_fallback_reason})"
+            for res in result.individual_results
+            if res.target_paths_mode == "appended"
+        ]
+        if appended:
+            warnings.append(
+                "target_paths were appended to the task instead of replacing its "
+                "paths, so the task's default scope (e.g. src/) was also scanned "
+                "for: " + "; ".join(appended)
+            )
+
         return {
             "suite_id": result.suite_id,
             "configuration": {

@@ -147,6 +147,49 @@ def test_handler_escaping_path_returns_error(server, monkeypatch, project):
     assert "config" not in captured
 
 
+def _suite_response(server, monkeypatch, modes, **kwargs):
+    individual = [
+        SimpleNamespace(
+            tool=tool,
+            target_paths_mode=mode,
+            target_paths_fallback_reason="body is a pipeline" if mode else None,
+            dict=lambda: {},
+        )
+        for tool, mode in modes.items()
+    ]
+    suite = MagicMock()
+    suite.individual_results = individual
+    monkeypatch.setattr(
+        server,
+        "orchestration_service",
+        SimpleNamespace(execute_comprehensive_suite=lambda config: suite),
+    )
+    return server.quality_execute_comprehensive_suite.fn(**kwargs)
+
+
+def test_handler_warns_naming_tools_that_appended_paths(server, monkeypatch, project):
+    result = _suite_response(
+        server,
+        monkeypatch,
+        {QualityTool.RUFF: "replaced", QualityTool.MYPY: "appended"},
+        target_paths=["lib/pkg"],
+    )
+
+    assert len(result["warnings"]) == 1
+    assert "mypy" in result["warnings"][0]
+    assert "ruff" not in result["warnings"][0]
+
+
+def test_handler_no_warning_when_all_replaced_or_default(server, monkeypatch, project):
+    replaced = _suite_response(
+        server, monkeypatch, {QualityTool.RUFF: "replaced"}, target_paths=["lib/pkg"]
+    )
+    default = _suite_response(server, monkeypatch, {QualityTool.RUFF: None})
+
+    assert replaced["warnings"] == []
+    assert default["warnings"] == []
+
+
 # --- orchestration service --------------------------------------------------
 
 
