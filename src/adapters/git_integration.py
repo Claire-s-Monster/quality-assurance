@@ -330,7 +330,7 @@ class GitIntegrationAdapter:
     def _run_git_command(self, args: list, timeout: int = 10) -> Optional[str]:
         """Run git command and return output."""
         try:
-            result = subprocess.run(  # noqa: S603 -- argv list with fixed "git" binary, no shell
+            result = subprocess.run(  # noqa: S603 -- private helper; all callers pass literal argv, no shell
                 ["git"] + args,
                 capture_output=True,
                 text=True,
