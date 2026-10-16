@@ -9,6 +9,7 @@ using pixi-first execution and the QualityOrchestrationService business logic la
 import logging
 import sys
 import os
+from dataclasses import asdict
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
@@ -93,6 +94,23 @@ def _resolve_project_path_visibility(project_path: Optional[str]):
         "project, pass an absolute project_path."
     )
     return resolved, False, warning
+
+
+def _parse_enum(enum_cls: Any, value: Optional[str], default: Any) -> Any:
+    """Case-insensitive enum lookup by value; None or unknown falls back to default."""
+    if value is None:
+        return default
+    try:
+        return enum_cls(value.lower())
+    except ValueError:
+        return default
+
+
+def _fix_entry_to_dict(entry: Any) -> Dict[str, Any]:
+    """Serialize a fix entry that may be a plain dict or a pydantic model."""
+    if isinstance(entry, BaseModel):
+        return entry.model_dump()
+    return dict(entry)
 
 
 # Request/Response Models for Input Validation
@@ -676,7 +694,7 @@ def quality_execute_complexity_analysis(
             "complexity_results": [comp.dict() for comp in result.complexity_results],
             "complexity_summary": {
                 "average_complexity": sum(
-                    c.cyclomatic_complexity for c in result.complexity_results
+                    c.complexity_score for c in result.complexity_results
                 )
                 / len(result.complexity_results)
                 if result.complexity_results
@@ -685,7 +703,7 @@ def quality_execute_complexity_analysis(
                     [
                         c
                         for c in result.complexity_results
-                        if c.cyclomatic_complexity > complexity_threshold
+                        if c.complexity_score > complexity_threshold
                     ]
                 ),
                 "total_functions": len(result.complexity_results),
@@ -768,9 +786,19 @@ def quality_execute_comprehensive_suite(
             }
 
         # Create suite configuration
+        # QualitySuiteConfiguration and execute_comprehensive_suite have no path
+        # scope (the service analyzes "src/" only), so a custom target_paths
+        # cannot be honoured; surface that instead of dropping it silently.
+        warnings: List[str] = []
+        if target_paths != ["src/"]:
+            warnings.append(
+                "target_paths is not supported by the comprehensive suite and "
+                f"was ignored (requested {target_paths}); the suite analyzes "
+                "'src/' only."
+            )
+
         suite_config = QualitySuiteConfiguration(
             included_tools=quality_tools,
-            target_paths=target_paths,
             parallel_execution=parallel_execution,
             quality_threshold=quality_threshold,
             fail_fast=fail_fast,
@@ -813,6 +841,7 @@ def quality_execute_comprehensive_suite(
                 "report_generated": result.report_generated,
                 "report_path": result.report_path,
             },
+            "warnings": warnings,
             "timestamp": datetime.now().isoformat(),
         }
 
@@ -1342,25 +1371,18 @@ def quality_establish_baseline(
             },
             "quality_snapshot": {
                 "overall_score": baseline.overall_score,
-                "tool_results_count": len(baseline.assessment_results),
-                "total_violations": baseline.total_violations,
-                "critical_violations": baseline.critical_violations,
-                "security_issues_count": baseline.security_issues_count,
+                "total_violations": baseline.metrics.total_violations,
+                "critical_violations": baseline.metrics.critical_violations,
+                "security_issues_count": baseline.metrics.security_issues_count,
             },
             "environment_info": {
                 "tool_versions": baseline.tool_versions,
                 "python_version": baseline.python_version,
-                "environment_hash": baseline.environment_hash,
+                "pixi_environment": baseline.pixi_environment,
             },
             "retention_policy": {
                 "retention_days": baseline.retention_days,
                 "expires_at": baseline.expires_at,
-            },
-            "storage_info": {
-                "files_analyzed": sum(
-                    result.files_analyzed for result in baseline.assessment_results
-                ),
-                "assessment_results": len(baseline.assessment_results),
             },
             "timestamp": datetime.now().isoformat(),
         }
@@ -1412,44 +1434,27 @@ def quality_compare_against_baseline(
             "comparison_id": comparison.comparison_id,
             "baseline_reference": {
                 "baseline_id": comparison.baseline_id,
-                "baseline_created_at": comparison.baseline_created_at,
-                "baseline_score": comparison.baseline_score,
             },
             "current_assessment": {
-                "current_score": comparison.current_score,
-                "assessment_date": comparison.comparison_date,
-                "files_analyzed": comparison.current_files_analyzed,
+                "current_assessment_id": comparison.current_assessment_id,
+                "assessment_date": comparison.comparison_timestamp,
             },
             "comparison_results": {
                 "overall_score_delta": comparison.overall_score_delta,
-                "score_change_percentage": (
-                    comparison.overall_score_delta / comparison.baseline_score * 100
-                )
-                if comparison.baseline_score > 0
-                else 0,
                 "trend_direction": comparison.trend_direction,
                 "regression_detected": comparison.regression_detected,
                 "significant_changes": comparison.significant_changes,
             },
             "metric_deltas": {
-                "violations_delta": comparison.violations_delta,
-                "critical_violations_delta": comparison.critical_violations_delta,
-                "security_issues_delta": comparison.security_issues_delta,
-                "complexity_delta": getattr(comparison, "complexity_delta", 0),
+                "violations_delta": comparison.violation_count_delta,
+                "critical_violations_delta": comparison.critical_violation_delta,
+                "security_issues_delta": comparison.security_issue_delta,
+                "complexity_delta": comparison.complexity_delta,
+                "coverage_delta": comparison.coverage_delta,
             },
-            "trend_analysis": {
-                "improving_areas": comparison.improving_areas,
-                "declining_areas": comparison.declining_areas,
-                "stable_areas": comparison.stable_areas,
-            },
-            "recommendations": comparison.recommendations,
+            "recommendations": comparison.trend_recommendations,
             "regression_details": {
-                "regression_severity": comparison.regression_severity
-                if comparison.regression_detected
-                else "none",
-                "affected_areas": comparison.regression_areas
-                if comparison.regression_detected
-                else [],
+                "regression_alerts": comparison.regression_alerts,
             },
             "timestamp": datetime.now().isoformat(),
         }
@@ -1653,10 +1658,9 @@ def quality_apply_automated_fixes(
             }
 
         # Convert validation mode
-        try:
-            validation_mode_enum = FixValidationMode(validation_mode.upper())
-        except ValueError:
-            validation_mode_enum = FixValidationMode.STRICT
+        validation_mode_enum = _parse_enum(
+            FixValidationMode, validation_mode, FixValidationMode.STRICT
+        )
 
         # Apply automated fixes using orchestration service
         result = orchestration_service.apply_automated_fixes(
@@ -1675,8 +1679,8 @@ def quality_apply_automated_fixes(
             },
             "fix_results": {
                 "successful_fixes": [fix.dict() for fix in result.successful_fixes],
-                "failed_fixes": [fix.dict() for fix in result.failed_fixes],
-                "skipped_fixes": [fix.dict() for fix in result.skipped_fixes],
+                "failed_fixes": [_fix_entry_to_dict(f) for f in result.failed_fixes],
+                "skipped_fixes": [_fix_entry_to_dict(f) for f in result.skipped_fixes],
             },
             "validation_results": {
                 "pre_fix_validation": result.pre_fix_validation.dict()
@@ -1767,15 +1771,8 @@ def quality_generate_comprehensive_report(
             }
 
         # Convert format and template strings to enums
-        try:
-            report_format = ReportFormat(format.upper())
-        except ValueError:
-            report_format = ReportFormat.MARKDOWN
-
-        try:
-            report_template = ReportTemplate(template.upper())
-        except ValueError:
-            report_template = ReportTemplate.STANDARD
+        report_format = _parse_enum(ReportFormat, format, ReportFormat.MARKDOWN)
+        report_template = _parse_enum(ReportTemplate, template, ReportTemplate.STANDARD)
 
         # Generate report using orchestration service
         report = orchestration_service.generate_quality_report(
@@ -1788,58 +1785,45 @@ def quality_generate_comprehensive_report(
         )
 
         # Calculate report statistics
-        content_length = len(report.content) if report.content else 0
-        sections_included = include_sections or [
-            "executive_summary",
-            "quality_overview",
-            "detailed_findings",
-            "recommendations",
-            "metrics_breakdown",
-        ]
+        content = report.report_content
+        sections_included = report.sections_included
 
         return {
             "report_metadata": {
                 "report_id": report.report_id,
                 "generated_at": report.generated_at,
-                "format": report.format.value,
-                "template": report.template.value,
+                "format": report.report_format.value,
+                "template": report.template_style.value,
                 "report_path": report.report_path,
             },
             "content_summary": {
-                "content_length_chars": content_length,
+                "content_length_chars": len(content),
                 "sections_included": sections_included,
-                "has_visualizations": report.has_visualizations,
-                "raw_results_attached": attach_raw_results,
+                "raw_results_attached": report.raw_results_attached,
             },
             "report_sections": {
                 "executive_summary": report.executive_summary,
                 "quality_score_summary": f"Overall Score: {report.overall_score}/10.0",
-                "key_findings": report.key_findings[:5],  # Top 5 findings
-                "critical_issues_count": len(
-                    [f for f in report.key_findings if "critical" in f.lower()]
-                ),
+                "quality_grade": report.quality_grade,
                 "recommendations_count": len(report.recommendations),
             },
             "export_info": {
-                "primary_format": report.format.value,
-                "file_size_bytes": len(report.content.encode("utf-8"))
-                if report.content
-                else 0,
+                "primary_format": report.report_format.value,
+                "file_size_bytes": len(content.encode("utf-8")),
                 "export_path": report.report_path,
+                "export_paths": report.export_paths,
                 "shareable": True,
             },
             "baseline_integration": {
                 "baseline_comparison_included": baseline_comparison is not None,
-                "trend_analysis_included": hasattr(report, "trend_analysis")
-                and report.trend_analysis is not None,
+                "trend_analysis_included": report.trend_analysis is not None,
                 "historical_context": "Included"
                 if baseline_comparison
                 else "Not available",
             },
             "report_highlights": [
-                f"Generated {report.format.value.lower()} report with {len(sections_included)} sections",
+                f"Generated {report.report_format.value} report with {len(sections_included)} sections",
                 f"Overall quality score: {report.overall_score}/10.0",
-                f"Found {len(report.key_findings)} key findings",
                 f"Provided {len(report.recommendations)} actionable recommendations",
             ],
             "next_steps": [
@@ -1848,8 +1832,8 @@ def quality_generate_comprehensive_report(
                 "Implement high-priority recommendations",
                 "Share report with relevant stakeholders",
             ],
-            "content": report.content
-            if report.content and len(report.content) < 10000
+            "content": content
+            if content and len(content) < 10000
             else None,  # Include content if not too large
             "timestamp": datetime.now().isoformat(),
         }
@@ -2348,7 +2332,9 @@ def quality_generate_pixi_tasks(
                     target_pattern=project_structure,
                     output_format="json",  # Internal format
                 )
-                individual_tasks[tool] = template
+                # QualityTaskTemplate is a dataclass; downstream code and the
+                # JSON response need a plain dict.
+                individual_tasks[tool] = asdict(template)
 
             except Exception as e:
                 container.logging.log_warning(
@@ -2408,7 +2394,8 @@ def quality_generate_pixi_tasks(
 
         # Format output according to requested format
         formatted_output = {}
-        if output_format.lower() == "toml":
+        output_format = (output_format or "toml").lower()
+        if output_format == "toml":
             # Generate TOML format for pixi.toml integration
             toml_tasks = {}
             for tool, task in individual_tasks.items():
@@ -2428,7 +2415,7 @@ def quality_generate_pixi_tasks(
 
             formatted_output = toml_tasks
 
-        elif output_format.lower() == "json":
+        elif output_format == "json":
             formatted_output = {
                 "individual_tasks": individual_tasks,
                 "composite_tasks": composite_tasks,
