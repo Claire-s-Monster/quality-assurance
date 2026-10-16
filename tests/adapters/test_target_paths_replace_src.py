@@ -33,7 +33,12 @@ class FakeExecutor:
         self.calls = []
 
     def resolve_task_name(self, tool, working_dir=None, environment=None):
-        return {"ruff": "lint", "mypy": "typecheck", "bandit": "security-scan"}[tool]
+        return {
+            "ruff": "lint",
+            "mypy": "typecheck",
+            "bandit": "security-scan",
+            "vulture": "dead-code",
+        }[tool]
 
     def select_quality_environment(self, task, working_dir=None, candidates=None):
         return "quality", "test"

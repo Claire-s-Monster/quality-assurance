@@ -10,6 +10,7 @@ import json
 import re
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.models import (
@@ -29,7 +30,41 @@ from adapters.direct_pixi_execution import TOOL_TASK_ALIASES, is_execution_failu
 
 
 _TASK_PATH_TOKENS = {"src", "src/", "tests", "tests/"}
-_PATH_FLAGS = {"-r", "--recursive"}
+
+# Options that consume the next token as their value, per tool. Anything else
+# starting with "-" (including bandit's -r) is a flag; a path after it is
+# positional.
+_VALUE_OPTIONS: Dict[str, frozenset[str]] = {
+    "ruff": frozenset(
+        {
+            "--config", "--select", "--extend-select", "--ignore", "--extend-ignore",
+            "--exclude", "--extend-exclude", "--target-version", "--output-format",
+            "--per-file-ignores", "--line-length", "--cache-dir", "--fixable",
+            "--unfixable", "--stdin-filename",
+        }
+    ),
+    "mypy": frozenset(
+        {
+            "--config-file", "--exclude", "--cache-dir", "--python-version",
+            "--python-executable", "--platform", "-p", "--package", "-m", "--module",
+            "-c", "--command", "--custom-typeshed-dir", "--junit-xml",
+            "--html-report", "--txt-report", "--linecount-report",
+        }
+    ),
+    "bandit": frozenset(
+        {
+            "-c", "--configfile", "-p", "--profile", "-t", "--tests", "-s", "--skip",
+            "-f", "--format", "-o", "--output", "-b", "--baseline", "--ini",
+            "-x", "--exclude", "-n", "--number", "--severity-level",
+            "--confidence-level", "--msg-template",
+        }
+    ),
+    "vulture": frozenset(
+        {
+            "--exclude", "--ignore-decorators", "--ignore-names", "--min-confidence",
+        }
+    ),
+}
 
 
 class QualityToolExecutionAdapter(QualityToolExecutionPort):
@@ -95,28 +130,38 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         return False
 
     @staticmethod
-    def _swap_path_tokens(tokens: List[str], target_paths: List[str]) -> List[str]:
-        """Replace the task body's positional src/tests paths with target_paths.
+    def _swap_path_tokens(
+        tokens: List[str],
+        target_paths: List[str],
+        tool: str,
+        workdir: Optional[str],
+    ) -> Optional[List[str]]:
+        """Replace the task body's positional paths with target_paths.
 
-        The first positional path is replaced, later ones dropped; option
-        values such as `--exclude tests/` are kept. Paths are appended when
-        the body names none.
+        A positional (non-option, non-option-value) token is a path when it is
+        src/tests or exists under workdir. The first is replaced, later ones
+        dropped; option values such as `--exclude tests/` are kept. Returns
+        None when the body has no path-like positional.
         """
+        value_opts = _VALUE_OPTIONS.get(tool, frozenset())
+        base = Path(workdir) if workdir else Path.cwd()
         swapped: List[str] = []
         placed = False
-        for i, token in enumerate(tokens):
-            prev = tokens[i - 1] if i else ""
-            positional = token in _TASK_PATH_TOKENS and (
-                not prev.startswith("-") or prev in _PATH_FLAGS
-            )
-            if not positional:
+        takes_value = False
+        for token in tokens:
+            if takes_value:
+                takes_value = False
                 swapped.append(token)
-            elif not placed:
-                swapped.extend(target_paths)
-                placed = True
-        if not placed:
-            swapped.extend(target_paths)
-        return swapped
+            elif token.startswith("-") and token != "-":
+                takes_value = token in value_opts
+                swapped.append(token)
+            elif token in _TASK_PATH_TOKENS or (base / token).exists():
+                if not placed:
+                    swapped.extend(target_paths)
+                    placed = True
+            else:
+                swapped.append(token)
+        return swapped if placed else None
 
     def _run_with_target_paths(
         self,
@@ -139,11 +184,15 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         executor = self.pixi_executor
         workdir = project_path or executor.working_dir
         body = executor._get_available_tasks(workdir, environment).get(pixi_task)
-        body_env, tokens = None, None
+        body_env, tokens, swapped = None, None, None
         reason = f"task '{pixi_task}' body not found"
         if body:
             body_env, tokens, reason = executor._parse_task_body_args(body, tool.value)
-        if tokens is None:
+        if tokens is not None:
+            swapped = self._swap_path_tokens(tokens, target_paths, tool.value, workdir)
+            if swapped is None:
+                reason = "task body names no existing path to replace"
+        if swapped is None:
             result: Dict[str, Any] = dict(
                 executor.run_task(
                     pixi_task,
@@ -159,7 +208,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         result = dict(
             executor.run_task(
                 tool.value,
-                args=[*self._swap_path_tokens(tokens, target_paths), *extra_args],
+                args=[*swapped, *extra_args],
                 timeout=300,
                 working_dir=project_path,
                 environment=environment or body_env,
@@ -926,23 +975,23 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         execution_start = time.time()
 
         try:
-            pixi_task = "dead-code"
             target_path = "src/"
 
-            # Validate task exists
-            task_check = self.pixi_executor.task_exists(
-                pixi_task, working_dir=project_path
-            )
-            if not task_check.get("exists", False):
+            resolved = self._resolve_pixi_task(tool.value, project_path, None)
+            if not resolved:
+                error_msg, pixi_task_used = self._describe_task_not_found(
+                    tool.value, project_path
+                )
                 return self._create_error_result(
                     tool=tool,
                     assessment_type=QualityAssessmentType.DEAD_CODE,
                     start_time=start_time,
                     execution_time_ms=(time.time() - execution_start) * 1000,
-                    error_msg=f"Pixi task '{pixi_task}' not found",
+                    error_msg=error_msg,
                     target_path=target_path,
-                    pixi_task_used=pixi_task,
+                    pixi_task_used=pixi_task_used,
                 )
+            pixi_task = resolved
 
             # Build arguments for vulture
             args = [] if target_paths else ["src/"]

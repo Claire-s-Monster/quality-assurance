@@ -190,9 +190,9 @@ class _Executor:
         self.task_exists_dirs = []
         self.runs = []
 
-    def task_exists(self, task, working_dir=None, environment=None):
+    def resolve_task_name(self, tool, working_dir=None, environment=None):
         self.task_exists_dirs.append(working_dir)
-        return {"exists": True}
+        return "dead-code"
 
     def select_quality_environment(self, task, working_dir=None, candidates=None):
         self.env_dir = working_dir

@@ -34,7 +34,7 @@ TOOL_TASK_ALIASES: Dict[str, tuple[str, ...]] = {
     "mypy": ("typecheck", "mypy", "type-check"),
     "bandit": ("security-scan", "security", "bandit"),
     "radon": ("complexity-check", "complexity", "radon"),
-    "vulture": ("dead-code-check", "dead-code", "vulture"),
+    "vulture": ("dead-code-check", "dead-code", "deadcode", "vulture"),
 }
 
 QUALITY_ENVIRONMENT_PREFERENCE: tuple[str, ...] = (

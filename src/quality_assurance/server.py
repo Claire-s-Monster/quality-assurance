@@ -811,6 +811,7 @@ def quality_execute_comprehensive_suite(
         # Set defaults
         if included_tools is None:
             included_tools = ["ruff", "mypy", "bandit", "radon", "vulture"]
+        default_target = target_paths is None
         if target_paths is None:
             target_paths = ["src/"]
 
@@ -833,6 +834,11 @@ def quality_execute_comprehensive_suite(
 
         # Validate custom target paths; the default keeps each tool's own scope
         warnings: List[str] = []
+        if default_target and not (project_root / "src").exists():
+            warnings.append(
+                f"The default target 'src/' does not exist under {project_root}; "
+                "pass target_paths to analyze the intended directories."
+            )
         suite_paths: Optional[List[str]] = None
         if target_paths and target_paths != ["src/"]:
             try:
