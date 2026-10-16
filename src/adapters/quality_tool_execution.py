@@ -54,9 +54,10 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         projects), so the concrete pixi task name is never hardcoded here --
         it is looked up through TOOL_TASK_ALIASES/resolve_task_name instead.
         """
-        return self.pixi_executor.resolve_task_name(
+        resolved: Optional[str] = self.pixi_executor.resolve_task_name(
             tool_value, working_dir=project_path, environment=environment
         )
+        return resolved
 
     def _select_environment(
         self, pixi_task: str, project_path: Optional[str], environment: Optional[str]
@@ -185,7 +186,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             end_time = datetime.now(UTC).isoformat()
 
             # Parse results based on tool and output format
-            violations = []
+            violations: List[QualityViolation] = []
             metrics = QualityMetrics(
                 overall_score=10.0,
                 total_violations=0,
@@ -341,7 +342,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             end_time = datetime.now(UTC).isoformat()
 
             # Parse mypy output
-            violations = []
+            violations: List[QualityViolation] = []
             type_errors = 0
 
             if result.get("success", False):
@@ -670,8 +671,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             end_time = datetime.now(UTC).isoformat()
 
             # Parse radon output
-            complexity_results = []
-            violations = []
+            complexity_results: List[ComplexityMetric] = []
+            violations: List[QualityViolation] = []
 
             stdout = result.get("stdout", "")
             if stdout:
@@ -839,8 +840,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             end_time = datetime.now(UTC).isoformat()
 
             # Parse vulture output
-            dead_code_results = []
-            violations = []
+            dead_code_results: List[DeadCodeResult] = []
+            violations: List[QualityViolation] = []
 
             stdout = result.get("stdout", "")
             if stdout:
@@ -1163,7 +1164,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         # Simple text parsing - this would need refinement for production
         lines = stdout.strip().split("\n")
 
-        current_issue = {}
+        current_issue: Dict[str, str] = {}
         for line in lines:
             if line.strip().startswith(">> Issue:"):
                 if current_issue:
@@ -1171,7 +1172,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                     issue, violation = self._create_bandit_issue_from_text(
                         current_issue
                     )
-                    if issue:
+                    if issue and violation:
                         security_issues.append(issue)
                         violations.append(violation)
 
@@ -1184,7 +1185,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         # Process last issue
         if current_issue:
             issue, violation = self._create_bandit_issue_from_text(current_issue)
-            if issue:
+            if issue and violation:
                 security_issues.append(issue)
                 violations.append(violation)
 
@@ -1649,7 +1650,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         execution_time_ms: float,
         error_msg: str,
         target_path: str,
-        pixi_task_used: str,
+        pixi_task_used: Optional[str],
         environment_used: Optional[str] = None,
         environment_auto_selected: bool = False,
     ) -> QualityAssessmentResult:

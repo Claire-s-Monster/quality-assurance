@@ -202,7 +202,9 @@ class QualityAssessmentResult(BaseModel):
     start_time: str = Field(description="Assessment start timestamp (ISO8601)")
     end_time: str = Field(description="Assessment completion timestamp (ISO8601)")
     execution_time_ms: float = Field(description="Execution time in milliseconds")
-    pixi_task_used: str = Field(description="Pixi task executed for assessment")
+    pixi_task_used: Optional[str] = Field(
+        None, description="Pixi task executed for assessment (None = no task resolved)"
+    )
     environment_used: Optional[str] = Field(
         None, description="Pixi environment the task ran in (None = pixi default)"
     )

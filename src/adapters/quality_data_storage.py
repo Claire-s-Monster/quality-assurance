@@ -314,7 +314,7 @@ class QualityDataStorageAdapter(QualityDataStoragePort):
     ) -> List[QualityAssessmentResult]:
         """Query quality assessment history with filtering and limits."""
         try:
-            results = []
+            results: List[QualityAssessmentResult] = []
 
             # Load assessment index
             index_file = self.metadata_dir / "assessment_index.json"
@@ -374,7 +374,7 @@ class QualityDataStorageAdapter(QualityDataStoragePort):
     def cleanup_expired_data(self, retention_days: int = 365) -> OperationResult:
         """Clean up expired quality data with comprehensive logging."""
         operation_start = time.time()
-        cleanup_stats = {
+        cleanup_stats: Dict[str, Any] = {
             "expired_baselines": 0,
             "expired_assessments": 0,
             "freed_space_bytes": 0,
@@ -488,7 +488,7 @@ class QualityDataStorageAdapter(QualityDataStoragePort):
             baseline_index = self._load_baseline_index()
             project_baselines = baseline_index.get(project_name, [])
 
-            export_data = {
+            export_data: Dict[str, Any] = {
                 "export_metadata": {
                     "project_name": project_name,
                     "export_timestamp": datetime.now(UTC).isoformat(),
@@ -788,7 +788,8 @@ class QualityDataStorageAdapter(QualityDataStoragePort):
 
         try:
             with open(index_file, "r") as f:
-                return json.load(f)
+                index: Dict[str, List[str]] = json.load(f)
+                return index
         except (json.JSONDecodeError, ValueError):
             return {}
 
