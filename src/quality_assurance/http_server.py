@@ -199,6 +199,11 @@ class HTTPQualityAssuranceServer:
 
         if tool_name == "execute_tool":
             target = arguments.get("tool_name")
+            if not isinstance(target, str) or not target:
+                return {
+                    "error": "execute_tool requires a 'tool_name' string",
+                    "available_tools": list(registry.keys()),
+                }
             params = arguments.get("parameters", {})
             # HTTP callers deliver JSON-RPC arguments as raw dicts (no FastMCP
             # parameter validation runs on this path), so a stringified

@@ -10,7 +10,7 @@ import logging
 import sys
 import os
 from dataclasses import asdict
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, TypeVar
 from datetime import datetime
 
 from fastmcp import FastMCP
@@ -20,8 +20,10 @@ from pydantic import BaseModel
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from core.container import Container
+from core.quality_orchestration_service import QualityOrchestrationService
 from core.models import (
     QualityTool,
+    QualityAssessmentResult,
     QualityAssessmentType,
     QualitySuiteConfiguration,
     FixType,
@@ -32,15 +34,31 @@ from core.models import (
 
 _log = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 # Initialize FastMCP app
 app = FastMCP("Quality Assurance MCP Server")
 
 # Global container and service instances
-container = None
-orchestration_service = None
+container: Optional[Container] = None
+orchestration_service: Optional[QualityOrchestrationService] = None
 
 
-def initialize_server():
+def _require_container() -> Container:
+    """Return the initialized container or raise if the server is not initialized."""
+    if container is None:
+        raise RuntimeError("server not initialized")
+    return container
+
+
+def _require_orchestration() -> QualityOrchestrationService:
+    """Return the orchestration service or raise if the server is not initialized."""
+    if orchestration_service is None:
+        raise RuntimeError("server not initialized")
+    return orchestration_service
+
+
+def initialize_server() -> None:
     """Initialize the server with dependency injection and MCP function integration."""
     global container, orchestration_service
 
@@ -53,7 +71,7 @@ def initialize_server():
     # Get orchestration service
     orchestration_service = container.orchestration_service
 
-    container.logging.log_info(
+    _require_container().logging.log_info(
         f"Quality Assurance MCP Server initialized in {working_dir}"
     )
 
@@ -68,7 +86,7 @@ def _resolve_server_working_directory() -> Optional[str]:
     """
     try:
         pixi_executor = getattr(
-            orchestration_service.quality_executor, "pixi_executor", None
+            _require_orchestration().quality_executor, "pixi_executor", None
         )
         return getattr(pixi_executor, "working_dir", None)
     except Exception:
@@ -104,6 +122,11 @@ def _parse_enum(enum_cls: Any, value: Optional[str], default: Any) -> Any:
         return enum_cls(value.lower())
     except ValueError:
         return default
+
+
+def _or_default(value: Optional[T], default: T) -> T:
+    """Return value, or default when the optional tool parameter was passed as None."""
+    return default if value is None else value
 
 
 def _fix_entry_to_dict(entry: Any) -> Dict[str, Any]:
@@ -306,13 +329,13 @@ def quality_execute_lint_assessment(
             }
 
         # Execute lint assessment
-        result = orchestration_service.execute_lint_assessment(
+        result = _require_orchestration().execute_lint_assessment(
             tool=quality_tool,
-            target_path=target_path,
+            target_path=_or_default(target_path, "src/"),
             rules=rules,
-            fix_mode=fix_mode,
-            output_format=output_format,
-            use_cache=use_cache,
+            fix_mode=_or_default(fix_mode, False),
+            output_format=_or_default(output_format, "json"),
+            use_cache=_or_default(use_cache, True),
             project_path=project_path,
             environment=environment,
         )
@@ -421,10 +444,10 @@ def quality_execute_typecheck_assessment(
             }
 
         # Execute typecheck assessment using orchestration service
-        result = orchestration_service.quality_executor.execute_typecheck_assessment(
+        result = _require_orchestration().quality_executor.execute_typecheck_assessment(
             tool=quality_tool,
-            target_path=target_path,
-            strict_mode=strict_mode,
+            target_path=_or_default(target_path, "src/"),
+            strict_mode=_or_default(strict_mode, False),
             config_file=config_file,
             project_path=project_path,
             environment=environment,
@@ -536,11 +559,11 @@ def quality_execute_security_scan(
             }
 
         # Execute security scan using orchestration service
-        result = orchestration_service.quality_executor.execute_security_scan(
+        result = _require_orchestration().quality_executor.execute_security_scan(
             tool=quality_tool,
-            target_path=target_path,
-            severity_threshold=severity_threshold,
-            exclude_tests=exclude_tests,
+            target_path=_or_default(target_path, "src/"),
+            severity_threshold=_or_default(severity_threshold, "medium"),
+            exclude_tests=_or_default(exclude_tests, True),
             project_path=project_path,
             environment=environment,
         )
@@ -666,9 +689,10 @@ def quality_execute_complexity_analysis(
             }
 
         # Execute complexity analysis using orchestration service
-        result = orchestration_service.quality_executor.execute_complexity_analysis(
+        complexity_threshold = _or_default(complexity_threshold, 10)
+        result = _require_orchestration().quality_executor.execute_complexity_analysis(
             tool=quality_tool,
-            target_path=target_path,
+            target_path=_or_default(target_path, "src/"),
             complexity_threshold=complexity_threshold,
             project_path=project_path,
             environment=environment,
@@ -776,7 +800,9 @@ def quality_execute_comprehensive_suite(
             try:
                 quality_tools.append(QualityTool(tool_str))
             except ValueError:
-                container.logging.log_warning(f"Skipping unsupported tool: {tool_str}")
+                _require_container().logging.log_warning(
+                    f"Skipping unsupported tool: {tool_str}"
+                )
 
         if not quality_tools:
             return {
@@ -799,15 +825,15 @@ def quality_execute_comprehensive_suite(
 
         suite_config = QualitySuiteConfiguration(
             included_tools=quality_tools,
-            parallel_execution=parallel_execution,
-            quality_threshold=quality_threshold,
-            fail_fast=fail_fast,
-            generate_report=generate_report,
-            report_format=report_format,
+            parallel_execution=_or_default(parallel_execution, True),
+            quality_threshold=_or_default(quality_threshold, 8.0),
+            fail_fast=_or_default(fail_fast, False),
+            generate_report=_or_default(generate_report, True),
+            report_format=_or_default(report_format, "markdown"),
         )
 
         # Execute comprehensive suite
-        result = orchestration_service.execute_comprehensive_suite(suite_config)
+        result = _require_orchestration().execute_comprehensive_suite(suite_config)
 
         return {
             "suite_id": result.suite_id,
@@ -889,23 +915,24 @@ def quality_calculate_quality_score(
             initialize_server()
 
         # Convert dict results back to model objects if provided
-        converted_results = []
+        converted_results: List[QualityAssessmentResult] = []
         if assessment_results:
             # This would need proper conversion logic based on the actual structure
-            container.logging.log_warning(
+            _require_container().logging.log_warning(
                 "Assessment results provided but conversion not implemented"
             )
 
         # Use orchestration service to get recent results if none provided
-        if not converted_results and orchestration_service.data_storage:
+        storage = _require_orchestration().data_storage
+        if not converted_results and storage:
             try:
-                converted_results = (
-                    orchestration_service.data_storage.query_assessment_history(
-                        project_name="current_project", limit=5
-                    )
+                converted_results = storage.query_assessment_history(
+                    project_name="current_project", limit=5
                 )
             except Exception as e:
-                container.logging.log_warning(f"Failed to get recent results: {e}")
+                _require_container().logging.log_warning(
+                    f"Failed to get recent results: {e}"
+                )
 
         if not converted_results:
             return {
@@ -915,8 +942,10 @@ def quality_calculate_quality_score(
             }
 
         # Calculate quality score using orchestration service
-        overall_score = orchestration_service.quality_analyzer.calculate_quality_score(
-            converted_results
+        overall_score = (
+            _require_orchestration().quality_analyzer.calculate_quality_score(
+                converted_results
+            )
         )
 
         # Generate detailed breakdown if requested
@@ -985,7 +1014,7 @@ def quality_calculate_quality_score(
 
         # Generate improvement recommendations
         recommendations = (
-            orchestration_service.quality_analyzer.generate_recommendations(
+            _require_orchestration().quality_analyzer.generate_recommendations(
                 converted_results
             )
         )
@@ -1047,10 +1076,10 @@ def quality_generate_recommendations(
             initialize_server()
 
         # Get recommendations using orchestration service
-        recommendations_data = orchestration_service.get_quality_recommendations(
+        recommendations_data = _require_orchestration().get_quality_recommendations(
             assessment_results=None,  # Use recent results
-            prioritize_by_impact=prioritize_by_impact,
-            include_automated_fixes=include_automated_fixes,
+            prioritize_by_impact=_or_default(prioritize_by_impact, True),
+            include_automated_fixes=_or_default(include_automated_fixes, True),
         )
 
         # Limit recommendations if requested
@@ -1115,19 +1144,18 @@ def quality_detect_quality_patterns(
             initialize_server()
 
         # Convert dict results if provided (simplified for now)
-        converted_results = []
+        converted_results: List[QualityAssessmentResult] = []
         if assessment_results:
-            container.logging.log_info(
+            _require_container().logging.log_info(
                 f"Analyzing {len(assessment_results)} provided results for patterns"
             )
 
         # Use recent results if none provided
-        if not converted_results and orchestration_service.data_storage:
+        storage = _require_orchestration().data_storage
+        if not converted_results and storage:
             try:
-                converted_results = (
-                    orchestration_service.data_storage.query_assessment_history(
-                        project_name="current_project", limit=10
-                    )
+                converted_results = storage.query_assessment_history(
+                    project_name="current_project", limit=10
                 )
             except Exception as e:
                 # History lookup is optional; the empty-results error below covers failure.
@@ -1140,7 +1168,7 @@ def quality_detect_quality_patterns(
             }
 
         # Detect patterns using quality analyzer
-        patterns = orchestration_service.quality_analyzer.detect_quality_patterns(
+        patterns = _require_orchestration().quality_analyzer.detect_quality_patterns(
             converted_results
         )
 
@@ -1212,19 +1240,18 @@ def quality_prioritize_issues(
             initialize_server()
 
         # Convert results if provided (simplified for now)
-        converted_results = []
+        converted_results: List[QualityAssessmentResult] = []
         if assessment_results:
-            container.logging.log_info(
+            _require_container().logging.log_info(
                 f"Prioritizing issues from {len(assessment_results)} provided results"
             )
 
         # Use recent results if none provided
-        if not converted_results and orchestration_service.data_storage:
+        storage = _require_orchestration().data_storage
+        if not converted_results and storage:
             try:
-                converted_results = (
-                    orchestration_service.data_storage.query_assessment_history(
-                        project_name="current_project", limit=10
-                    )
+                converted_results = storage.query_assessment_history(
+                    project_name="current_project", limit=10
                 )
             except Exception as e:
                 # History lookup is optional; the empty-results error below covers failure.
@@ -1237,8 +1264,10 @@ def quality_prioritize_issues(
             }
 
         # Prioritize issues using quality analyzer
-        prioritized_issues = orchestration_service.quality_analyzer.prioritize_issues(
-            converted_results
+        prioritized_issues = (
+            _require_orchestration().quality_analyzer.prioritize_issues(
+                converted_results
+            )
         )
 
         # Limit results if requested
@@ -1343,18 +1372,18 @@ def quality_establish_baseline(
         suite_config = None
         if suite_configuration:
             # This would need proper conversion from dict to QualitySuiteConfiguration
-            container.logging.log_info(
+            _require_container().logging.log_info(
                 "Custom suite configuration provided for baseline"
             )
 
         # Establish baseline using orchestration service
-        baseline = orchestration_service.establish_quality_baseline(
+        baseline = _require_orchestration().establish_quality_baseline(
             baseline_id=baseline_id,
-            project_name=project_name,
+            project_name=_or_default(project_name, "current_project"),
             project_version=project_version,
             git_commit=git_commit,
             git_branch=git_branch,
-            retention_days=retention_days,
+            retention_days=_or_default(retention_days, 365),
             tags=tags,
             suite_configuration=suite_config,
         )
@@ -1421,12 +1450,12 @@ def quality_compare_against_baseline(
         # Convert suite configuration if provided
         suite_config = None
         if suite_configuration:
-            container.logging.log_info(
+            _require_container().logging.log_info(
                 "Custom suite configuration provided for comparison"
             )
 
         # Compare against baseline using orchestration service
-        comparison = orchestration_service.compare_against_baseline(
+        comparison = _require_orchestration().compare_against_baseline(
             baseline_id=baseline_id, suite_configuration=suite_config
         )
 
@@ -1499,7 +1528,8 @@ def quality_analyze_trends(
         # For now, provide a comprehensive trend analysis structure
         # This would integrate with the QualityTrendAnalysisAdapter
 
-        if not orchestration_service.data_storage:
+        storage = _require_orchestration().data_storage
+        if not storage:
             return {
                 "error": "Data storage not available for trend analysis",
                 "timestamp": datetime.now().isoformat(),
@@ -1507,10 +1537,9 @@ def quality_analyze_trends(
 
         # Get historical data
         try:
-            historical_data = (
-                orchestration_service.data_storage.query_assessment_history(
-                    project_name=project_name, limit=50
-                )
+            historical_data = storage.query_assessment_history(
+                project_name=_or_default(project_name, "current_project"),
+                limit=50,
             )
         except Exception as e:
             return {
@@ -1624,7 +1653,7 @@ def quality_apply_automated_fixes(
         if not orchestration_service:
             initialize_server()
 
-        if not orchestration_service.automated_fix:
+        if not _require_orchestration().automated_fix:
             return {
                 "error": "Automated fix capability not available",
                 "message": "Automated fix adapter not configured in orchestration service",
@@ -1642,11 +1671,11 @@ def quality_apply_automated_fixes(
                 elif fix_type_str.lower() == "unused_variables":
                     converted_fix_types.append(FixType.UNUSED_VARIABLES)
                 else:
-                    container.logging.log_warning(
+                    _require_container().logging.log_warning(
                         f"Unsupported fix type: {fix_type_str}"
                     )
             except Exception as e:
-                container.logging.log_warning(
+                _require_container().logging.log_warning(
                     f"Failed to convert fix type {fix_type_str}: {e}"
                 )
 
@@ -1663,10 +1692,10 @@ def quality_apply_automated_fixes(
         )
 
         # Apply automated fixes using orchestration service
-        result = orchestration_service.apply_automated_fixes(
+        result = _require_orchestration().apply_automated_fixes(
             fix_types=converted_fix_types,
-            dry_run=dry_run,
-            backup_before_fix=backup_before_fix,
+            dry_run=_or_default(dry_run, True),
+            backup_before_fix=_or_default(backup_before_fix, True),
             validation_mode=validation_mode_enum,
         )
 
@@ -1763,7 +1792,7 @@ def quality_generate_comprehensive_report(
         if not orchestration_service:
             initialize_server()
 
-        if not orchestration_service.quality_reporting:
+        if not _require_orchestration().quality_reporting:
             return {
                 "error": "Quality reporting capability not available",
                 "message": "Quality reporting adapter not configured in orchestration service",
@@ -1775,12 +1804,12 @@ def quality_generate_comprehensive_report(
         report_template = _parse_enum(ReportTemplate, template, ReportTemplate.STANDARD)
 
         # Generate report using orchestration service
-        report = orchestration_service.generate_quality_report(
+        report = _require_orchestration().generate_quality_report(
             assessment_results=None,  # Use recent results
             format=report_format,
             template=report_template,
             include_sections=include_sections,
-            attach_raw_results=attach_raw_results,
+            attach_raw_results=_or_default(attach_raw_results, False),
             baseline_comparison=None,  # Would need conversion from dict
         )
 
@@ -1979,7 +2008,7 @@ def quality_execute_pixi_aware_assessment(
             target_paths = ["src/"]
 
         # Get enhanced pixi adapter from container
-        pixi_adapter = container.pixi_executor
+        pixi_adapter = _require_container().pixi_executor
         if not hasattr(pixi_adapter, "detect_quality_environment"):
             return {
                 "error": "Enhanced pixi quality capabilities not available",
@@ -2044,14 +2073,16 @@ def quality_execute_pixi_aware_assessment(
                         quality_tool=tool,
                         target_paths=target_paths,
                         quality_config=quality_config,
-                        environment_optimization=environment_optimization,
+                        environment_optimization=_or_default(
+                            environment_optimization, True
+                        ),
                         working_dir=project_path,
                         environment=environment,
                     )
                     results.append(result)
 
                 except Exception as e:
-                    container.logging.log_error(f"Failed to run {tool}: {e}")
+                    _require_container().logging.log_error(f"Failed to run {tool}: {e}")
                     results.append({"tool": tool, "status": "error", "error": str(e)})
             else:
                 results.append(
@@ -2175,7 +2206,7 @@ def quality_optimize_pixi_environment(
             initialize_server()
 
         # Get enhanced pixi adapter from container
-        pixi_adapter = container.pixi_executor
+        pixi_adapter = _require_container().pixi_executor
         if not hasattr(pixi_adapter, "detect_quality_environment"):
             return {
                 "error": "Enhanced pixi quality capabilities not available",
@@ -2206,7 +2237,7 @@ def quality_optimize_pixi_environment(
                         )
                         generated_tasks[tool] = template
                     except Exception as e:
-                        container.logging.log_warning(
+                        _require_container().logging.log_warning(
                             f"Failed to generate template for {tool}: {e}"
                         )
 
@@ -2312,7 +2343,7 @@ def quality_generate_pixi_tasks(
             initialize_server()
 
         # Get enhanced pixi adapter from container
-        pixi_adapter = container.pixi_executor
+        pixi_adapter = _require_container().pixi_executor
         if not hasattr(pixi_adapter, "generate_quality_task_template"):
             return {
                 "error": "Enhanced pixi quality capabilities not available",
@@ -2321,15 +2352,15 @@ def quality_generate_pixi_tasks(
             }
 
         # Generate individual tool tasks
-        individual_tasks = {}
-        composite_tasks = {}
+        individual_tasks: Dict[str, Dict[str, Any]] = {}
+        composite_tasks: Dict[str, Dict[str, Any]] = {}
 
         for tool in tools:
             try:
                 # Generate individual task template
                 template = pixi_adapter.generate_quality_task_template(
                     tool_name=tool,
-                    target_pattern=project_structure,
+                    target_pattern=_or_default(project_structure, "src/"),
                     output_format="json",  # Internal format
                 )
                 # QualityTaskTemplate is a dataclass; downstream code and the
@@ -2337,7 +2368,7 @@ def quality_generate_pixi_tasks(
                 individual_tasks[tool] = asdict(template)
 
             except Exception as e:
-                container.logging.log_warning(
+                _require_container().logging.log_warning(
                     f"Failed to generate template for {tool}: {e}"
                 )
                 individual_tasks[tool] = {
@@ -2537,7 +2568,7 @@ def quality_validate_pixi_integration(
             initialize_server()
 
         # Get enhanced pixi adapter from container
-        pixi_adapter = container.pixi_executor
+        pixi_adapter = _require_container().pixi_executor
         if not hasattr(pixi_adapter, "detect_quality_environment"):
             return {
                 "error": "Enhanced pixi quality capabilities not available",
@@ -2545,7 +2576,7 @@ def quality_validate_pixi_integration(
                 "timestamp": datetime.now().isoformat(),
             }
 
-        validation_results = {}
+        validation_results: Dict[str, Any] = {}
 
         # 1. Tool Availability Validation
         env_info = pixi_adapter.detect_quality_environment(working_dir)
@@ -2563,7 +2594,7 @@ def quality_validate_pixi_integration(
 
         # 2. Environment Health Check
         if check_environment_health:
-            health_status = {
+            health_status: Dict[str, Any] = {
                 "overall_health": env_info.environment_health,
                 "performance_indicators": env_info.performance_indicators,
                 "isolation_effective": True,  # Pixi provides isolation
@@ -2731,7 +2762,7 @@ def quality_health_check() -> Dict[str, Any]:
             initialize_server()
 
         # Perform health check using orchestration service
-        health = orchestration_service.health_check()
+        health = _require_orchestration().health_check()
 
         return {
             "system_health": {
@@ -2846,7 +2877,7 @@ def quality_get_system_health() -> Dict[str, Any]:
         if not orchestration_service:
             initialize_server()
 
-        health = container.quality_service.get_system_health()
+        health = _require_container().quality_service.get_system_health()
         return health.dict()
 
     except Exception as e:
