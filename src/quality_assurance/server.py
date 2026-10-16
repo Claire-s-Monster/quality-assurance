@@ -8,7 +8,7 @@ using pixi-first execution and the QualityOrchestrationService business logic la
 
 import sys
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
 from fastmcp import FastMCP
@@ -1886,6 +1886,35 @@ def _classify_pixi_aware_outcome(result: Dict[str, Any]) -> str:
     return "executed"
 
 
+def _derive_pixi_aware_gate_verdict(
+    tools: List[str], results: List[Dict[str, Any]], outcomes: List[str]
+) -> Tuple[str, str]:
+    """Collapse per-tool outcomes into one (gate_verdict, reason).
+
+    Built on `_classify_pixi_aware_outcome`'s outcomes -- no second classifier.
+    "passed" only when every requested tool executed cleanly; "findings" when
+    the only non-clean tools ran and reported findings (findings_detected);
+    "error" for anything else (failed without findings, unavailable, or no
+    tools run), so nothing that did not fully run is reported green.
+    """
+    if not tools:
+        return "error", "no tools were requested, so nothing ran"
+    broken: List[str] = []
+    with_findings: List[str] = []
+    for tool_name, result, outcome in zip(tools, results, outcomes, strict=False):
+        if outcome == "unavailable":
+            broken.append(f"{tool_name} unavailable")
+        elif outcome == "failed" and result.get("findings_detected"):
+            with_findings.append(tool_name)
+        elif outcome == "failed":
+            broken.append(f"{tool_name} errored")
+    if broken:
+        return "error", "; ".join(broken)
+    if with_findings:
+        return "findings", "findings reported by: " + ", ".join(with_findings)
+    return "passed", f"all {len(tools)} requested tools ran clean"
+
+
 def _describe_pixi_aware_failure(tool_name: str, result: Dict[str, Any]) -> str:
     """Build a one-line description of why a tool failed, for recommendations."""
     detail = result.get("error") or result.get("stderr") or result.get("message")
@@ -1922,7 +1951,11 @@ def quality_execute_pixi_aware_assessment(
         environment: Pixi environment to run the task in (e.g. "quality", "dev"). Omit unless the task name is ambiguous across environments; pixi will name the valid candidates if it is.
 
     Returns:
-        Dict with pixi-aware assessment results, environment info, and optimization data
+        Dict with pixi-aware assessment results, environment info, and optimization data.
+        Read `gate_verdict` for the overall result: "passed" (every requested tool ran
+        clean), "findings" (tools ran and reported issues, none errored) or "error" (a
+        tool errored, was unavailable or could not run); `gate_verdict_reason` says why.
+        The MCP envelope status alone does not reflect findings.
     """
     try:
         if project_path is not None:
@@ -1935,6 +1968,7 @@ def quality_execute_pixi_aware_assessment(
                     ),
                     "assessment_type": "pixi_aware_comprehensive",
                     "status": "error",
+                    "gate_verdict": "error",
                     "timestamp": datetime.now().isoformat(),
                 }
             if not os.path.isdir(project_path):
@@ -1942,6 +1976,7 @@ def quality_execute_pixi_aware_assessment(
                     "error": f"project_path does not exist or is not a directory: {project_path}",
                     "assessment_type": "pixi_aware_comprehensive",
                     "status": "error",
+                    "gate_verdict": "error",
                     "timestamp": datetime.now().isoformat(),
                 }
 
@@ -1960,6 +1995,7 @@ def quality_execute_pixi_aware_assessment(
             return {
                 "error": "Enhanced pixi quality capabilities not available",
                 "message": "DirectPixiExecutionAdapter not enhanced with quality intelligence",
+                "gate_verdict": "error",
                 "timestamp": datetime.now().isoformat(),
             }
 
@@ -2070,8 +2106,14 @@ def quality_execute_pixi_aware_assessment(
                 0, "Quality tool execution failed for: " + "; ".join(failure_details)
             )
 
+        gate_verdict, gate_verdict_reason = _derive_pixi_aware_gate_verdict(
+            tools, results, outcomes
+        )
+
         return {
             "assessment_type": "pixi_aware_comprehensive",
+            "gate_verdict": gate_verdict,
+            "gate_verdict_reason": gate_verdict_reason,
             "environment_info": {
                 "available_tools": list(env_info.available_tools),
                 "quality_tasks": env_info.quality_tasks,
@@ -2109,6 +2151,7 @@ def quality_execute_pixi_aware_assessment(
         return {
             "error": f"Pixi-aware assessment failed: {str(e)}",
             "assessment_type": "pixi_aware_comprehensive",
+            "gate_verdict": "error",
             "project_path_resolved": resolved_path,
             "project_path_supplied": path_supplied,
             "timestamp": datetime.now().isoformat(),
