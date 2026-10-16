@@ -239,6 +239,7 @@ ruff = ">=0.7.3"
 
 # Type Checking
 mypy = ">=1.8.0"
+types-toml = ">=0.10.8"  # Stubs for toml (mypy import-untyped)
 
 [tool.pixi.feature.quality.pypi-dependencies]
 # Test utilities only available on PyPI
