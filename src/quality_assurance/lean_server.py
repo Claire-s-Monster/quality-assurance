@@ -558,7 +558,7 @@ class QualityAssuranceLeanMCP:
 
         # Pixi-Quality Integration Functions (Functions 15-19)
         registry["quality_execute_pixi_aware_assessment"] = {
-            "description": "Execute quality assessment using pixi-aware task orchestration",
+            "description": "Execute quality assessment using pixi-aware task orchestration. Read result.gate_verdict (passed|findings|error) for the overall outcome.",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -986,15 +986,25 @@ class QualityAssuranceLeanMCP:
                 # capability tools) are ad-hoc vocabularies and are left alone.
                 if isinstance(result, dict):
                     status = result.get("status")
-                    if result.get("error") or (
-                        status in _KNOWN_EXECUTION_STATUSES
-                        and status not in _PASSING_EXECUTION_STATUSES
+                    gate_errored = result.get("gate_verdict") == "error"
+                    if (
+                        result.get("error")
+                        or gate_errored
+                        or (
+                            status in _KNOWN_EXECUTION_STATUSES
+                            and status not in _PASSING_EXECUTION_STATUSES
+                        )
                     ):
                         return {
                             "tool": tool_name,
                             "status": "error",
                             "error": result.get("error")
-                            or f"{tool_name} reported status={status!r}",
+                            or (
+                                f"{tool_name} gate_verdict=error: "
+                                f"{result.get('gate_verdict_reason')}"
+                                if gate_errored
+                                else f"{tool_name} reported status={status!r}"
+                            ),
                             "result": result,
                         }
 

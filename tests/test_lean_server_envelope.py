@@ -218,6 +218,30 @@ class TestLeanServerExecuteToolEnvelope:
 
         assert envelope["status"] == "success"
 
+    @pytest.mark.parametrize(
+        ("verdict", "envelope_status"),
+        [("passed", "success"), ("findings", "success"), ("error", "error")],
+    )
+    def test_gate_verdict_error_fails_the_envelope(
+        self, execute_tool_fn, main_server_module, monkeypatch, verdict, envelope_status
+    ):
+        """A pixi-aware result whose gate_verdict is 'error' (a tool errored or
+        could not run) must not be wrapped in a success envelope."""
+
+        def stub_tool(**kwargs):
+            return {
+                "assessment_type": "pixi_aware_comprehensive",
+                "gate_verdict": verdict,
+            }
+
+        monkeypatch.setattr(
+            main_server_module, "quality_execute_pixi_aware_assessment", stub_tool
+        )
+
+        envelope = execute_tool_fn("quality_execute_pixi_aware_assessment", {})
+
+        assert envelope["status"] == envelope_status
+
     @pytest.mark.parametrize("status_value", _NON_PASSING_EXECUTION_STATUSES)
     def test_every_non_passing_execution_status_fails_the_envelope(
         self, execute_tool_fn, main_server_module, monkeypatch, status_value

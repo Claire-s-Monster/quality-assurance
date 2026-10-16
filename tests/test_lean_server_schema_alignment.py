@@ -52,6 +52,13 @@ class TestLeanServerSchemaAlignment:
             return set(schema["properties"].keys())
         return set()
 
+    def test_pixi_aware_registry_description_mentions_gate_verdict(
+        self, lean_server_registry
+    ):
+        """Clients discover the tool via the registry; it must point at gate_verdict."""
+        entry = lean_server_registry["quality_execute_pixi_aware_assessment"]
+        assert "gate_verdict" in entry["description"]
+
     def test_all_registry_tools_exist_in_server(
         self, lean_server_registry, main_server_module
     ):

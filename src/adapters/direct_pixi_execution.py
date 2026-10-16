@@ -1018,14 +1018,26 @@ class DirectPixiExecutionAdapter:
                 else:
                     missing_tools.add(tool_name)
 
+            # Core tools with no task in this environment may still be
+            # declared by another one (e.g. bandit in quality-extended).
+            declared_elsewhere = {
+                tool
+                for tool in self._CORE_QUALITY_TOOLS & missing_tools
+                if self.environments_providing_tool(tool, working_dir)
+            }
+
             # Assess environment health
             health = self._assess_environment_health(
-                available_tools, missing_tools, quality_tasks
+                available_tools, missing_tools, quality_tasks, declared_elsewhere
             )
 
             # Generate recommendations
             recommendations = self._generate_environment_recommendations(
-                available_tools, missing_tools, quality_tasks, health
+                available_tools,
+                missing_tools,
+                quality_tasks,
+                health,
+                declared_elsewhere,
             )
 
             # Calculate performance indicators
@@ -1411,19 +1423,32 @@ class DirectPixiExecutionAdapter:
         except Exception:
             return None
 
+    # Gates every project needs. Other detectable tools (pylint, flake8, black,
+    # isort, radon, ...) are alternatives or extras: their absence is not a
+    # health problem.
+    _CORE_QUALITY_TOOLS = frozenset({"ruff", "mypy", "bandit", "pytest"})
+
     def _assess_environment_health(
         self,
         available_tools: Set[str],
         missing_tools: Set[str],
         quality_tasks: Dict[str, str],
+        declared_elsewhere: Set[str] | None = None,
     ) -> str:
-        """Assess overall environment health."""
-        total_tools = len(available_tools) + len(missing_tools)
-        availability_ratio = (
-            len(available_tools) / total_tools if total_tools > 0 else 0
-        )
+        """Assess overall environment health.
 
-        # Health based on tool availability and task configuration
+        Measured over the core gates only. A core tool with no task in the
+        default environment still counts as present when another environment
+        declares it (`declared_elsewhere`, e.g. bandit in quality-extended).
+        `missing_tools` is accepted for call compatibility; only core tools
+        absent from both `available_tools` and `declared_elsewhere` count.
+        """
+        present = self._CORE_QUALITY_TOOLS & (
+            available_tools | (declared_elsewhere or set())
+        )
+        availability_ratio = len(present) / len(self._CORE_QUALITY_TOOLS)
+
+        # Health based on core tool availability and task configuration
         if availability_ratio >= 0.8 and len(quality_tasks) >= 3:
             return "optimal"
         elif availability_ratio >= 0.5 and len(quality_tasks) >= 1:
@@ -1437,6 +1462,7 @@ class DirectPixiExecutionAdapter:
         missing_tools: Set[str],
         quality_tasks: Dict[str, str],
         health: str,
+        declared_elsewhere: Set[str] | None = None,
     ) -> List[str]:
         """Generate environment improvement recommendations."""
         recommendations = []
@@ -1444,16 +1470,20 @@ class DirectPixiExecutionAdapter:
         if health == "degraded":
             recommendations.append("Environment needs significant improvement")
 
-        if missing_tools:
-            core_tools = {"ruff", "mypy", "bandit", "pytest"}
-            missing_core = core_tools.intersection(missing_tools)
-            if missing_core:
-                recommendations.append(
-                    f"Install essential tools: {', '.join(missing_core)}"
-                )
+        missing_core = (self._CORE_QUALITY_TOOLS & missing_tools) - (
+            declared_elsewhere or set()
+        )
+        if missing_core:
+            recommendations.append(
+                "Install essential tools (no task or dependency found in any "
+                f"pixi environment): {', '.join(sorted(missing_core))}"
+            )
 
         if len(quality_tasks) < 3:
-            recommendations.append("Configure more quality tasks in pixi.toml")
+            recommendations.append(
+                f"Only {len(quality_tasks)} quality task(s) found in the default "
+                "environment; configure at least 3 in pixi.toml"
+            )
 
         if "ruff" in available_tools and "black" in missing_tools:
             recommendations.append("Consider using ruff format instead of black")

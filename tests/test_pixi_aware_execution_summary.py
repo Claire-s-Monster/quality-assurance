@@ -218,3 +218,101 @@ class TestPixiAwareExecutionSummaryAccounting:
             rec.startswith("Quality tool execution failed for:")
             for rec in result["recommendations"]
         )
+
+
+_PASS = {"success": True, "stdout": "", "stderr": "", "exit_code": 0}
+_FINDINGS = {
+    "success": False,
+    "stdout": "x",
+    "stderr": "",
+    "exit_code": 1,
+    "findings_detected": True,
+}
+_CRASH = {"success": False, "stdout": "", "stderr": "boom", "exit_code": 2}
+_NOT_FOUND = {"success": False, "stdout": "", "stderr": "not found", "exit_code": 1}
+
+
+def _run(main_server_module, monkeypatch, tmp_path, run_results, available, tools):
+    adapter = _FakePixiAdapter(run_results, available_tools=available)
+    monkeypatch.setattr(main_server_module, "orchestration_service", object())
+    monkeypatch.setattr(main_server_module, "container", _FakeContainer(adapter))
+    return main_server_module.quality_execute_pixi_aware_assessment.fn(
+        tools=tools, project_path=str(tmp_path)
+    )
+
+
+class TestPixiAwareGateVerdict:
+    """Top-level gate_verdict: passed | findings | error."""
+
+    @pytest.mark.parametrize(
+        ("run_results", "available", "tools", "expected"),
+        [
+            (
+                {"ruff": _PASS, "mypy": _PASS},
+                {"ruff", "mypy"},
+                ["ruff", "mypy"],
+                "passed",
+            ),
+            (
+                {"ruff": _FINDINGS, "mypy": _PASS},
+                {"ruff", "mypy"},
+                ["ruff", "mypy"],
+                "findings",
+            ),
+            (
+                {"ruff": _FINDINGS, "mypy": _CRASH},
+                {"ruff", "mypy"},
+                ["ruff", "mypy"],
+                "error",
+            ),
+            ({"ruff": _CRASH}, {"ruff"}, ["ruff"], "error"),
+            # exit 1 without findings_detected is "did not run", not findings
+            ({"ruff": _NOT_FOUND}, {"ruff"}, ["ruff"], "error"),
+            # requested tool unavailable: never green, never mere findings
+            ({"ruff": _PASS}, {"ruff"}, ["ruff", "bandit"], "error"),
+            ({"ruff": _FINDINGS}, {"ruff"}, ["ruff", "bandit"], "error"),
+            ({}, set(), [], "error"),
+        ],
+    )
+    def test_verdict_values(
+        self,
+        main_server_module,
+        monkeypatch,
+        tmp_path,
+        run_results,
+        available,
+        tools,
+        expected,
+    ):
+        result = _run(
+            main_server_module, monkeypatch, tmp_path, run_results, available, tools
+        )
+        assert result["gate_verdict"] == expected
+        assert isinstance(result["gate_verdict_reason"], str)
+        assert result["gate_verdict_reason"]
+
+    def test_never_passed_unless_all_requested_tools_executed(
+        self, main_server_module, monkeypatch, tmp_path
+    ):
+        result = _run(
+            main_server_module,
+            monkeypatch,
+            tmp_path,
+            {"ruff": _PASS},
+            {"ruff"},
+            ["ruff", "bandit"],
+        )
+        summary = result["execution_summary"]
+        assert summary["tools_unavailable"] == 1
+        assert result["gate_verdict"] != "passed"
+        assert "bandit" in result["gate_verdict_reason"]
+
+    def test_early_error_returns_carry_error_verdict(self, main_server_module):
+        result = main_server_module.quality_execute_pixi_aware_assessment.fn(
+            project_path="relative/path"
+        )
+        assert result["gate_verdict"] == "error"
+
+    def test_docstring_points_clients_at_gate_verdict(self, main_server_module):
+        doc = main_server_module.quality_execute_pixi_aware_assessment.fn.__doc__
+        assert "gate_verdict" in doc
