@@ -509,8 +509,9 @@ class AutomatedFixResult(BaseModel):
     )
 
     # Validation and safety
-    pre_fix_validation: QualityAssessmentResult = Field(
-        description="Quality assessment before fixes"
+    pre_fix_validation: Optional[QualityAssessmentResult] = Field(
+        None,
+        description="Quality assessment before fixes (None if no assessment was run)",
     )
     post_fix_validation: Optional[QualityAssessmentResult] = Field(
         None, description="Quality assessment after fixes"
