@@ -290,9 +290,9 @@ class QualityOrchestrationService:
                         {"operation": "execute_comprehensive_suite"},
                     )
 
-            individual_results = []
-            failed_tools = []
-            skipped_tools = []
+            individual_results: List[QualityAssessmentResult] = []
+            failed_tools: List[QualityTool] = []
+            skipped_tools: List[QualityTool] = []
 
             # Execute tools based on configuration
             if configuration.parallel_execution:
@@ -1011,9 +1011,9 @@ class QualityOrchestrationService:
         self, configuration: QualitySuiteConfiguration
     ) -> tuple[List[QualityAssessmentResult], List[QualityTool], List[QualityTool]]:
         """Execute quality tools in parallel."""
-        individual_results = []
-        failed_tools = []
-        skipped_tools = []
+        individual_results: List[QualityAssessmentResult] = []
+        failed_tools: List[QualityTool] = []
+        skipped_tools: List[QualityTool] = []
 
         # Create futures for each tool
         futures = {}
@@ -1083,9 +1083,9 @@ class QualityOrchestrationService:
         self, configuration: QualitySuiteConfiguration
     ) -> tuple[List[QualityAssessmentResult], List[QualityTool], List[QualityTool]]:
         """Execute quality tools sequentially."""
-        individual_results = []
-        failed_tools = []
-        skipped_tools = []
+        individual_results: List[QualityAssessmentResult] = []
+        failed_tools: List[QualityTool] = []
+        skipped_tools: List[QualityTool] = []
 
         for tool in configuration.included_tools:
             try:

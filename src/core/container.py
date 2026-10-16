@@ -7,6 +7,7 @@ as the agent-cache server, ensuring consistent architecture for quality tools.
 
 import os
 from pathlib import Path
+from typing import Any, cast
 
 from adapters.logging import LoggingAdapter
 from adapters.quality_tool_execution import QualityToolExecutionAdapter
@@ -31,8 +32,8 @@ class Container:
     def __init__(self, working_dir: str | None = None):
         """Initialize container with optional working directory override."""
         self._working_dir = working_dir or os.getcwd()
-        self._services = {}
-        self._adapters = {}
+        self._services: dict[str, Any] = {}
+        self._adapters: dict[str, Any] = {}
         self._initialize_adapters()
         self._initialize_services()
 
@@ -100,22 +101,22 @@ class Container:
     @property
     def quality_service(self) -> QualityAssuranceService:
         """Get the main quality assurance service."""
-        return self._services["quality"]
+        return cast(QualityAssuranceService, self._services["quality"])
 
     @property
     def orchestration_service(self) -> QualityOrchestrationService:
         """Get the quality orchestration service."""
-        return self._services["orchestration"]
+        return cast(QualityOrchestrationService, self._services["orchestration"])
 
     @property
     def logging(self) -> LoggingAdapter:
         """Get the logging adapter."""
-        return self._adapters["logging"]
+        return cast(LoggingAdapter, self._adapters["logging"])
 
     @property
     def quality_executor(self) -> QualityToolExecutionAdapter:
         """Get the quality tool execution adapter."""
-        return self._adapters["quality_executor"]
+        return cast(QualityToolExecutionAdapter, self._adapters["quality_executor"])
 
     @property
     def pixi_executor(self) -> DirectPixiExecutionAdapter:
@@ -125,32 +126,32 @@ class Container:
         execution, NOT the QualityToolExecutionAdapter returned by
         ``quality_executor``.
         """
-        return self._adapters["direct_pixi"]
+        return cast(DirectPixiExecutionAdapter, self._adapters["direct_pixi"])
 
     @property
     def quality_analyzer(self) -> QualityAnalysisAdapter:
         """Get the quality analysis adapter."""
-        return self._adapters["quality_analyzer"]
+        return cast(QualityAnalysisAdapter, self._adapters["quality_analyzer"])
 
     @property
     def trend_analyzer(self) -> QualityTrendAnalysisAdapter:
         """Get the quality trend analysis adapter."""
-        return self._adapters["trend_analyzer"]
+        return cast(QualityTrendAnalysisAdapter, self._adapters["trend_analyzer"])
 
     @property
     def data_storage(self) -> QualityDataStorageAdapter:
         """Get the quality data storage adapter."""
-        return self._adapters["data_storage"]
+        return cast(QualityDataStorageAdapter, self._adapters["data_storage"])
 
     @property
     def git_integration(self) -> GitIntegrationAdapter:
         """Get the git integration adapter."""
-        return self._adapters["git_integration"]
+        return cast(GitIntegrationAdapter, self._adapters["git_integration"])
 
     @property
     def automated_fix(self) -> AutomatedFixAdapter:
         """Get the automated fix adapter."""
-        return self._adapters["automated_fix"]
+        return cast(AutomatedFixAdapter, self._adapters["automated_fix"])
 
     def get_working_directory(self) -> str:
         """Get the configured working directory."""
