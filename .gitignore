@@ -40,6 +40,8 @@ Thumbs.db
 
 # Session/Runtime data
 logs/
+.benchmarks/
+.locks/
 
 # Local Claude Code / MCP tooling (machine-specific, managed by setup scripts)
 .claude/
