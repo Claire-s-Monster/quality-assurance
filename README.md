@@ -15,8 +15,6 @@ Tools reachable through `execute_tool`:
 - Pixi integration: `quality_execute_pixi_aware_assessment`, `quality_optimize_pixi_environment`, `quality_generate_pixi_tasks`, `quality_validate_pixi_integration`
 - Health: `quality_get_system_health`
 
-See [LEAN_MCP_IMPLEMENTATION.md](LEAN_MCP_IMPLEMENTATION.md) for the lean protocol details.
-
 ## Development
 
 This project is pixi-only; the package installs itself editable via `[tool.pixi.pypi-dependencies]`. Do not use pip or uv directly.
