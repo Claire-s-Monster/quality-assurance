@@ -361,7 +361,9 @@ def quality_execute_lint_assessment(
             "environment_used": result.environment_used,
             "environment_auto_selected": result.environment_auto_selected,
             "target_path": result.target_path,
+            "effective_scope": result.effective_scope,
             "files_analyzed": result.files_analyzed,
+            "estimated_files_analyzed": result.estimated_files_analyzed,
             "violations": [violation.dict() for violation in result.violations],
             "parsed_metrics": result.parsed_metrics.dict(),
             "auto_fix_available": result.auto_fix_available,
@@ -474,7 +476,9 @@ def quality_execute_typecheck_assessment(
             "environment_used": result.environment_used,
             "environment_auto_selected": result.environment_auto_selected,
             "target_path": result.target_path,
+            "effective_scope": result.effective_scope,
             "files_analyzed": result.files_analyzed,
+            "estimated_files_analyzed": result.estimated_files_analyzed,
             "violations": [violation.dict() for violation in result.violations],
             "parsed_metrics": result.parsed_metrics.dict(),
             "type_coverage_percentage": getattr(
@@ -589,7 +593,9 @@ def quality_execute_security_scan(
             "environment_used": result.environment_used,
             "environment_auto_selected": result.environment_auto_selected,
             "target_path": result.target_path,
+            "effective_scope": result.effective_scope,
             "files_analyzed": result.files_analyzed,
+            "estimated_files_analyzed": result.estimated_files_analyzed,
             "security_issues": [issue.dict() for issue in result.security_issues],
             "risk_summary": {
                 "critical_issues": len(
@@ -719,7 +725,9 @@ def quality_execute_complexity_analysis(
             "environment_used": result.environment_used,
             "environment_auto_selected": result.environment_auto_selected,
             "target_path": result.target_path,
+            "effective_scope": result.effective_scope,
             "files_analyzed": result.files_analyzed,
+            "estimated_files_analyzed": result.estimated_files_analyzed,
             "complexity_results": [comp.dict() for comp in result.complexity_results],
             "complexity_summary": {
                 "average_complexity": sum(
@@ -1242,7 +1250,14 @@ def quality_detect_quality_patterns(
             },
             "pattern_types_analyzed": pattern_types or ["all"],
             "analysis_coverage": {
-                "files_analyzed": sum(r.files_analyzed for r in converted_results),
+                "files_analyzed": sum(
+                    r.files_analyzed
+                    for r in converted_results
+                    if r.files_analyzed is not None
+                ),
+                "files_analyzed_unknown": sum(
+                    1 for r in converted_results if r.files_analyzed is None
+                ),
                 "tools_used": list(set(r.tool.value for r in converted_results)),
             },
             "timestamp": datetime.now().isoformat(),

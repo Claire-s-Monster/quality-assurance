@@ -156,9 +156,11 @@ class DirectPixiExecutionAdapter:
         self._pixi_bin = _resolve_pixi_executable()
 
         # Quality intelligence attributes
-        self._quality_env_cache: Optional[QualityEnvironmentInfo] = None
-        self._cache_timestamp: Optional[float] = None
+        # Keyed by resolved absolute working_dir -> (info, timestamp): the
+        # result is project-specific and must never be served to another one.
+        self._quality_env_cache: Dict[str, tuple[QualityEnvironmentInfo, float]] = {}
         self._cache_ttl: int = 300  # 5 minutes cache TTL
+        self._cache_max_entries: int = 16
 
         # Per-task duration history for timeout diagnostics (in-memory only).
         # Maps task_name -> bounded deque of recent successful/completed
@@ -995,10 +997,16 @@ class DirectPixiExecutionAdapter:
             QualityEnvironmentInfo with complete environment analysis
         """
         working_dir = working_dir or self.working_dir
+        detection_start = time.time()
+        try:
+            cache_key = str(Path(working_dir).resolve())
+        except (OSError, RuntimeError):
+            cache_key = os.path.abspath(working_dir)
 
-        # Check cache first
-        if self._quality_env_cache is not None and self._is_cache_valid():
-            return self._quality_env_cache
+        # Check cache first (per project)
+        cached = self._cached_env_info(cache_key)
+        if cached is not None:
+            return cached
 
         try:
             # Start with empty environment info
@@ -1077,8 +1085,12 @@ class DirectPixiExecutionAdapter:
                 performance_indicators=performance_indicators,
             )
 
-            self._quality_env_cache = env_info
-            self._cache_timestamp = time.time()
+            existing = self._quality_env_cache.get(cache_key)
+            if existing is None or existing[1] <= detection_start:
+                self._quality_env_cache.pop(cache_key, None)
+                self._quality_env_cache[cache_key] = (env_info, time.time())
+            while len(self._quality_env_cache) > self._cache_max_entries:
+                del self._quality_env_cache[next(iter(self._quality_env_cache))]
 
             return env_info
 
@@ -1369,11 +1381,16 @@ class DirectPixiExecutionAdapter:
     # PRIVATE QUALITY HELPER METHODS
     # =========================================================================
 
-    def _is_cache_valid(self) -> bool:
-        """Check if environment cache is still valid."""
-        if not self._quality_env_cache or not self._cache_timestamp:
-            return False
-        return (time.time() - self._cache_timestamp) < self._cache_ttl
+    def _cached_env_info(self, cache_key: str) -> QualityEnvironmentInfo | None:
+        """Return the unexpired cached environment info for one project."""
+        entry = self._quality_env_cache.get(cache_key)
+        if entry is None:
+            return None
+        info, timestamp = entry
+        if (time.time() - timestamp) < self._cache_ttl:
+            return info
+        self._quality_env_cache.pop(cache_key, None)
+        return None
 
     def _analyze_quality_tool(
         self,
