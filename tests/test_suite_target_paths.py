@@ -200,7 +200,9 @@ def test_service_default_calls_have_no_target_paths(service, parallel):
     )
 
     run = (
-        service._execute_tools_parallel if parallel else service._execute_tools_sequential
+        service._execute_tools_parallel
+        if parallel
+        else service._execute_tools_sequential
     )
     run(config)
 
@@ -218,7 +220,9 @@ def test_service_custom_paths_passed_to_every_tool(service, parallel):
     )
 
     run = (
-        service._execute_tools_parallel if parallel else service._execute_tools_sequential
+        service._execute_tools_parallel
+        if parallel
+        else service._execute_tools_sequential
     )
     run(config)
 

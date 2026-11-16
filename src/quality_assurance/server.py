@@ -1971,10 +1971,19 @@ def _classify_pixi_aware_outcome(result: Dict[str, Any]) -> str:
 
 def _describe_findings(tool_name: str, result: Dict[str, Any]) -> str:
     """Tool name, plus severity counts when the parsed output carries them."""
-    counts = (result.get("parsed_output") or {}).get("severity_counts")
-    if not isinstance(counts, dict) or not counts:
-        return tool_name
-    return f"{tool_name} (" + ", ".join(f"{k} {v}" for k, v in counts.items()) + ")"
+    parsed = result.get("parsed_output") or {}
+    counts = parsed.get("severity_counts")
+    if isinstance(counts, dict) and counts:
+        return f"{tool_name} (" + ", ".join(f"{k} {v}" for k, v in counts.items()) + ")"
+    for key, label in (
+        ("issue_count", "issues" if tool_name != "mypy" else "errors"),
+        ("violation_count", "violations"),
+        ("error_count", "errors"),
+    ):
+        count = parsed.get(key)
+        if isinstance(count, int) and not isinstance(count, bool) and count:
+            return f"{tool_name} ({count} {label})"
+    return tool_name
 
 
 def _describe_errored(tool_name: str, result: Dict[str, Any]) -> str:
@@ -2115,7 +2124,7 @@ def quality_execute_pixi_aware_assessment(
         use_pixi_templates: Use pixi task templates
         project_path: Absolute path to the project root to analyze (default: server working directory)
         environment: Pixi environment to run the task in (e.g. "quality", "dev"). Omit unless the task name is ambiguous across environments; pixi will name the valid candidates if it is.
-        summary_only: When true, each assessment_results entry is reduced to task_name, exit_code, findings_detected, counts (issue/violation/error counts, severity_counts) and error. Otherwise stdout/stderr are capped at 2000 chars (see *_truncated / *_length) and stdout is omitted when parsed_output carries the data.
+        summary_only: When true, each assessment_results entry is reduced to task_name, exit_code, findings_detected, counts (issue/violation/error counts, severity_counts) and error, and the response omits environment_info, optimization_result and pixi_intelligence entirely. Otherwise stdout/stderr are capped at 2000 chars (see *_truncated / *_length) and stdout is omitted when parsed_output carries the data.
 
     Returns:
         Dict with pixi-aware assessment results, environment info, and optimization data.
@@ -2258,18 +2267,39 @@ def quality_execute_pixi_aware_assessment(
         # _classify_pixi_aware_outcome always returns exactly one of the
         # three categories below, so this sum is structurally guaranteed to
         # equal len(tools) -- see test_pixi_aware_execution_summary.py.
+        # A tool that ran and reported findings (findings_detected) counts as
+        # executed -- it is not an execution failure -- and additionally as
+        # tools_with_findings. tools_failed is errored tools only.
         outcomes = [_classify_pixi_aware_outcome(r) for r in results]
-        tools_executed = outcomes.count("executed")
+        has_findings = [
+            o in ("failed", "executed") and bool(r.get("findings_detected"))
+            for r, o in zip(results, outcomes, strict=False)
+        ]
+        tools_with_findings = sum(has_findings)
         tools_unavailable = outcomes.count("unavailable")
-        tools_failed = outcomes.count("failed")
+        tools_failed = sum(
+            1
+            for o, f in zip(outcomes, has_findings, strict=False)
+            if o == "failed" and not f
+        )
+        tools_executed = len(outcomes) - tools_unavailable - tools_failed
 
+        if tools_with_findings:
+            findings_text = ", ".join(
+                _describe_findings(tool_name, result)
+                for tool_name, result, f in zip(
+                    tools, results, has_findings, strict=False
+                )
+                if f
+            )
+            recommendations.insert(0, f"Findings reported by: {findings_text}")
         if tools_failed:
             failure_details = [
                 _describe_pixi_aware_failure(tool_name, result, bool(summary_only))
-                for tool_name, result, outcome in zip(
-                    tools, results, outcomes, strict=False
+                for tool_name, result, outcome, f in zip(
+                    tools, results, outcomes, has_findings, strict=False
                 )
-                if outcome == "failed"
+                if outcome == "failed" and not f
             ]
             recommendations.insert(
                 0, "Quality tool execution failed for: " + "; ".join(failure_details)
@@ -2279,23 +2309,11 @@ def quality_execute_pixi_aware_assessment(
             tools, results, outcomes
         )
 
-        return {
+        response: Dict[str, Any] = {
             "assessment_type": "pixi_aware_comprehensive",
             "gate_verdict": gate_verdict,
             "gate_verdict_reason": gate_verdict_reason,
-            "environment_info": {
-                "available_tools": list(env_info.available_tools),
-                "quality_tasks": env_info.quality_tasks,
-                "environment_health": env_info.environment_health,
-                "tool_versions": env_info.tool_versions,
-                "performance_indicators": env_info.performance_indicators,
-            },
             "optimization_applied": environment_optimization,
-            "optimization_result": (
-                optimization_result
-                if isinstance(optimization_result, dict)
-                else (optimization_result.dict() if optimization_result else None)
-            ),
             "assessment_results": [
                 _summarize_pixi_aware_result(r)
                 if summary_only
@@ -2305,13 +2323,9 @@ def quality_execute_pixi_aware_assessment(
             "execution_summary": {
                 "tools_requested": len(tools),
                 "tools_executed": tools_executed,
+                "tools_with_findings": tools_with_findings,
                 "tools_unavailable": tools_unavailable,
                 "tools_failed": tools_failed,
-            },
-            "pixi_intelligence": {
-                "templates_used": use_pixi_templates,
-                "environment_optimization_enabled": environment_optimization,
-                "pixi_task_isolation": True,
             },
             "recommendations": recommendations,
             "project_path_resolved": resolved_path,
@@ -2319,6 +2333,25 @@ def quality_execute_pixi_aware_assessment(
             "environment_requested": environment,
             "timestamp": datetime.now().isoformat(),
         }
+        if not summary_only:
+            response["environment_info"] = {
+                "available_tools": list(env_info.available_tools),
+                "quality_tasks": env_info.quality_tasks,
+                "environment_health": env_info.environment_health,
+                "tool_versions": env_info.tool_versions,
+                "performance_indicators": env_info.performance_indicators,
+            }
+            response["optimization_result"] = (
+                optimization_result
+                if isinstance(optimization_result, dict)
+                else (optimization_result.dict() if optimization_result else None)
+            )
+            response["pixi_intelligence"] = {
+                "templates_used": use_pixi_templates,
+                "environment_optimization_enabled": environment_optimization,
+                "pixi_task_isolation": True,
+            }
+        return response
 
     except Exception as e:
         resolved_path, path_supplied, _ = _resolve_project_path_visibility(project_path)

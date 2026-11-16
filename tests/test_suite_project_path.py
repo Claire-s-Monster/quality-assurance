@@ -160,7 +160,9 @@ def test_service_default_has_no_project_path_kwarg(service, parallel):
         included_tools=ALL_TOOLS, parallel_execution=parallel
     )
     run = (
-        service._execute_tools_parallel if parallel else service._execute_tools_sequential
+        service._execute_tools_parallel
+        if parallel
+        else service._execute_tools_sequential
     )
     run(config)
     for mock in _calls(service):
@@ -173,7 +175,9 @@ def test_service_passes_project_path_to_every_tool(service, parallel):
         included_tools=ALL_TOOLS, parallel_execution=parallel, project_path="/p"
     )
     run = (
-        service._execute_tools_parallel if parallel else service._execute_tools_sequential
+        service._execute_tools_parallel
+        if parallel
+        else service._execute_tools_sequential
     )
     run(config)
     for mock in _calls(service):
