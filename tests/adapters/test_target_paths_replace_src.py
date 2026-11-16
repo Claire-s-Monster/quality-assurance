@@ -101,7 +101,9 @@ def test_bandit_keeps_recursive_flag_and_exclude():
 EXCLUDE_DEFAULT = "tests,test,*_test.py,test_*.py"
 
 
-@pytest.mark.parametrize("paths", [["tests"], ["tests/"], ["tests/unit"], ["src/", "tests/x.py"]])
+@pytest.mark.parametrize(
+    "paths", [["tests"], ["tests/"], ["tests/unit"], ["src/", "tests/x.py"]]
+)
 def test_bandit_does_not_exclude_tests_when_targeted(paths):
     _, args, _ = _run(QualityTool.BANDIT, paths)
 

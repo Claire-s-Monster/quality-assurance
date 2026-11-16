@@ -37,31 +37,76 @@ _TASK_PATH_TOKENS = {"src", "src/", "tests", "tests/"}
 _VALUE_OPTIONS: Dict[str, frozenset[str]] = {
     "ruff": frozenset(
         {
-            "--config", "--select", "--extend-select", "--ignore", "--extend-ignore",
-            "--exclude", "--extend-exclude", "--target-version", "--output-format",
-            "--per-file-ignores", "--line-length", "--cache-dir", "--fixable",
-            "--unfixable", "--stdin-filename",
+            "--config",
+            "--select",
+            "--extend-select",
+            "--ignore",
+            "--extend-ignore",
+            "--exclude",
+            "--extend-exclude",
+            "--target-version",
+            "--output-format",
+            "--per-file-ignores",
+            "--line-length",
+            "--cache-dir",
+            "--fixable",
+            "--unfixable",
+            "--stdin-filename",
         }
     ),
     "mypy": frozenset(
         {
-            "--config-file", "--exclude", "--cache-dir", "--python-version",
-            "--python-executable", "--platform", "-p", "--package", "-m", "--module",
-            "-c", "--command", "--custom-typeshed-dir", "--junit-xml",
-            "--html-report", "--txt-report", "--linecount-report",
+            "--config-file",
+            "--exclude",
+            "--cache-dir",
+            "--python-version",
+            "--python-executable",
+            "--platform",
+            "-p",
+            "--package",
+            "-m",
+            "--module",
+            "-c",
+            "--command",
+            "--custom-typeshed-dir",
+            "--junit-xml",
+            "--html-report",
+            "--txt-report",
+            "--linecount-report",
         }
     ),
     "bandit": frozenset(
         {
-            "-c", "--configfile", "-p", "--profile", "-t", "--tests", "-s", "--skip",
-            "-f", "--format", "-o", "--output", "-b", "--baseline", "--ini",
-            "-x", "--exclude", "-n", "--number", "--severity-level",
-            "--confidence-level", "--msg-template",
+            "-c",
+            "--configfile",
+            "-p",
+            "--profile",
+            "-t",
+            "--tests",
+            "-s",
+            "--skip",
+            "-f",
+            "--format",
+            "-o",
+            "--output",
+            "-b",
+            "--baseline",
+            "--ini",
+            "-x",
+            "--exclude",
+            "-n",
+            "--number",
+            "--severity-level",
+            "--confidence-level",
+            "--msg-template",
         }
     ),
     "vulture": frozenset(
         {
-            "--exclude", "--ignore-decorators", "--ignore-names", "--min-confidence",
+            "--exclude",
+            "--ignore-decorators",
+            "--ignore-names",
+            "--min-confidence",
         }
     ),
 }
@@ -124,7 +169,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
     def _targets_tests(target_paths: Optional[List[str]]) -> bool:
         """Whether any explicit target path is `tests` or lies under it."""
         for path in target_paths or []:
-            parts = [p for p in path.replace("\\", "/").split("/") if p not in ("", ".")]
+            parts = [
+                p for p in path.replace("\\", "/").split("/") if p not in ("", ".")
+            ]
             if parts and parts[0] == "tests":
                 return True
         return False
