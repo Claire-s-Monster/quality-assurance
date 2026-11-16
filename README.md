@@ -37,7 +37,7 @@ pixi run http-server
 | Task | Environment | Description |
 |------|-------------|-------------|
 | `test` | all | Run the test suite on the selected environment's interpreter |
-| `quality` | `ci` | Run `test`, `lint` and `typecheck` |
+| `quality` | `ci` | Run `test`, `lint`, `typecheck` and `format-check` |
 | `lint` / `lint-full` / `lint-fix` | `ci` | Ruff critical rules / all rules / auto-fix |
 | `format` / `format-check` | `ci` | Ruff format / verify formatting |
 | `typecheck` | `ci` | mypy over `src/` |
