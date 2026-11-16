@@ -414,7 +414,7 @@ format-diff = "ruff format --diff src/ tests/"        # Show formatting changes
 typecheck = "mypy src/"
 
 # Combined Quality Check - MANDATORY BEFORE COMMIT
-quality = { depends-on = ["test", "lint", "typecheck"] }
+quality = { depends-on = ["test", "lint", "typecheck", "format-check"] }
 
 # CI variants
 ci-lint = "ruff check src/ tests/ --output-format=github --select=F,E9"
