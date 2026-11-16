@@ -597,6 +597,11 @@ class QualityAssuranceLeanMCP:
                         "type": "string",
                         "description": "Pixi environment to run the task in (e.g. 'quality', 'dev'); omit unless the task is ambiguous across environments",
                     },
+                    "summary_only": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Reduce each assessment_results entry to task_name, exit_code, findings_detected, counts and error (small payload for large repos)",
+                    },
                 },
             },
         }

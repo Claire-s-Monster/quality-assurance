@@ -18,12 +18,14 @@ import shlex
 import shutil
 import statistics
 import subprocess
+import tempfile
 import time
 from collections import deque
 from typing import Dict, Any, List, Optional, Set
 from pathlib import Path
 from dataclasses import dataclass
 
+from core.payload_bounds import bound_parsed_output
 from core.ports import LoggingPort
 
 _log = logging.getLogger(__name__)
@@ -894,27 +896,45 @@ class DirectPixiExecutionAdapter:
                     "working_dir": working_dir,
                 }
 
-            if body is None or self._is_bare_tool_body(body, quality_tool):
-                body_mode = "task"
-                base_result = self.run_task(
-                    task_name=task_name,
-                    args=optimized_args,
-                    timeout=timeout,
-                    working_dir=working_dir,
-                    environment=environment,
-                )
-            else:
-                body_mode = "direct_tool"
-                base_result = self._run_tool_directly(
-                    task_name,
-                    quality_tool,
-                    body,
-                    optimized_args,
-                    quality_config,
-                    timeout,
-                    working_dir,
-                    environment,
-                )
+            # bandit's JSON goes to a temp file (outside the target repo), not
+            # stdout: on a large repo stdout is huge and mixed with log noise.
+            capture_notes: Dict[str, str] = {}
+            output_file = self._new_bandit_output_file(quality_tool, capture_notes)
+            try:
+                if body is None or self._is_bare_tool_body(body, quality_tool):
+                    body_mode = "task"
+                    if quality_tool == "bandit":
+                        optimized_args = self._with_bandit_file_output(
+                            optimized_args, output_file
+                        )
+                    base_result = self.run_task(
+                        task_name=task_name,
+                        args=optimized_args,
+                        timeout=timeout,
+                        working_dir=working_dir,
+                        environment=environment,
+                    )
+                else:
+                    body_mode = "direct_tool"
+                    base_result = self._run_tool_directly(
+                        task_name,
+                        quality_tool,
+                        body,
+                        optimized_args,
+                        quality_config,
+                        timeout,
+                        working_dir,
+                        environment,
+                        output_file=output_file,
+                    )
+                if output_file:
+                    file_json = self._read_text_file(output_file)
+                    if file_json.strip():
+                        base_result["structured_output"] = file_json
+            finally:
+                if output_file:
+                    self._remove_file(output_file)
+            base_result.update(capture_notes)
             base_result["task_body_mode"] = body_mode
 
             # Enhance result with quality intelligence
@@ -1513,6 +1533,7 @@ class DirectPixiExecutionAdapter:
         timeout: int,
         working_dir: str,
         environment: str | None,
+        output_file: str | None = None,
     ) -> Dict[str, Any]:
         """Run the tool itself for an alias task whose body is a full command.
 
@@ -1532,6 +1553,9 @@ class DirectPixiExecutionAdapter:
             if quality_config.get("output_format") == "json":
                 task_args = self._with_json_output(quality_tool, task_args)
             args, args_info = task_args, {"task_args_mode": "task_args"}
+
+        if quality_tool == "bandit":
+            args = self._with_bandit_file_output(args, output_file)
 
         if environment:
             source = "caller"
@@ -1640,6 +1664,62 @@ class DirectPixiExecutionAdapter:
             elif not any(arg.startswith(n + "=") for n in names if n.startswith("--")):
                 kept.append(arg)
         return kept + json_flag
+
+    @staticmethod
+    def _new_bandit_output_file(
+        quality_tool: str, diagnostics: Dict[str, str] | None = None
+    ) -> str | None:
+        """Path of a fresh temp file for bandit's JSON report.
+
+        None for other tools, and for bandit when no temp file can be created;
+        that failure is recorded in `diagnostics["report_capture"]` and bandit
+        then reports JSON on stdout instead.
+        """
+        if quality_tool != "bandit":
+            return None
+        try:
+            fd, path = tempfile.mkstemp(prefix="bandit-", suffix=".json")
+        except OSError as e:
+            if diagnostics is not None:
+                diagnostics["report_capture"] = f"stdout (tempfile unavailable: {e})"
+            return None
+        os.close(fd)
+        return path
+
+    @staticmethod
+    def _with_bandit_file_output(args: List[str], output_file: str | None) -> List[str]:
+        """Drop any caller -o/--output and -f/--format (and values); then write
+        JSON to `output_file` (or to stdout when there is none)."""
+        kept: List[str] = []
+        skip = False
+        for arg in args:
+            if skip:
+                skip = False
+            elif arg in ("-o", "--output", "-f", "--format"):
+                skip = True
+            elif arg.startswith(("--output=", "--format=")):
+                continue
+            elif re.match(r"-[of].", arg):  # attached short form: -fjson, -oFILE
+                continue
+            else:
+                kept.append(arg)
+        if output_file is None:
+            return kept + ["-f", "json"]
+        return kept + ["-f", "json", "-o", output_file]
+
+    @staticmethod
+    def _read_text_file(path: str) -> str:
+        try:
+            return Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+
+    @staticmethod
+    def _remove_file(path: str) -> None:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
     @staticmethod
     def _is_bare_tool_body(body: str | List[str], quality_tool: str) -> bool:
@@ -1770,16 +1850,42 @@ class DirectPixiExecutionAdapter:
             enhanced_result
         )
 
-        if (enhanced_result["success"] or found_issues) and enhanced_result["stdout"]:
+        # Structured output captured from a file (bandit) wins over stdout.
+        output_text = (
+            enhanced_result.pop("structured_output", None) or enhanced_result["stdout"]
+        )
+
+        parsed_output = None
+        if (enhanced_result["success"] or found_issues) and output_text:
             parsed_output = self._parse_quality_output(
-                quality_tool, enhanced_result["stdout"], enhanced_result["stderr"]
+                quality_tool, output_text, enhanced_result["stderr"]
             )
-            if parsed_output and found_issues:
-                if self._parsed_finding_count(parsed_output) > 0:
+
+        if quality_tool == "bandit" and enhanced_result["success"]:
+            # A clean bandit pass needs a parsed report with a results list.
+            if not parsed_output or "issue_count" not in parsed_output:
+                if parsed_output:
                     enhanced_result["parsed_output"] = parsed_output
-                    enhanced_result["findings_detected"] = True
-            elif parsed_output:
-                enhanced_result["parsed_output"] = parsed_output
+                enhanced_result["error"] = "bandit produced no parseable report"
+                return enhanced_result
+
+        if not parsed_output:
+            return enhanced_result
+
+        if quality_tool == "bandit" and parsed_output.get("error_count"):
+            # bandit could not analyse some files: not a trustworthy result,
+            # whatever it found. Reported through "error", like a crash.
+            enhanced_result["parsed_output"] = bound_parsed_output(parsed_output)
+            enhanced_result["error"] = (
+                f"bandit reported {parsed_output['error_count']} error(s) "
+                "while scanning (see parsed_output.errors)"
+            )
+        elif self._parsed_finding_count(parsed_output) > 0:
+            # Findings count whatever the exit code (e.g. --exit-zero).
+            enhanced_result["parsed_output"] = bound_parsed_output(parsed_output)
+            enhanced_result["findings_detected"] = True
+        elif not found_issues:
+            enhanced_result["parsed_output"] = bound_parsed_output(parsed_output)
 
         return enhanced_result
 
@@ -1790,7 +1896,7 @@ class DirectPixiExecutionAdapter:
         violations = parsed_output.get("violations")
         if violations is not None and not all(isinstance(v, dict) for v in violations):
             return 0
-        for key in ("violation_count", "error_count", "issue_count"):
+        for key in ("violation_count", "issue_count", "error_count"):
             if key in parsed_output:
                 count: int = parsed_output[key]
                 return count
@@ -1856,20 +1962,77 @@ class DirectPixiExecutionAdapter:
                 errors.append(line)
         return {"tool": "mypy", "type_errors": errors, "error_count": len(errors)}
 
-    def _parse_bandit_output(self, output: str) -> Dict[str, Any]:
-        """Parse Bandit JSON output."""
-        try:
-            if output.strip().startswith("{"):
-                data = json.loads(output)
-                return {
-                    "tool": "bandit",
-                    "security_issues": data.get("results", []),
-                    "issue_count": len(data.get("results", [])),
-                }
-        except json.JSONDecodeError:
-            pass
+    _BANDIT_MAX_ISSUES = 50
+    _BANDIT_MAX_ERRORS = 20
+    _BANDIT_ISSUE_KEYS = (
+        "filename",
+        "line_number",
+        "test_id",
+        "issue_severity",
+        "issue_confidence",
+        "issue_text",
+    )
 
-        return {"tool": "bandit", "raw_output": output}
+    def _parse_bandit_output(self, output: str) -> Dict[str, Any]:
+        """Parse Bandit JSON output into a bounded summary.
+
+        Tolerates non-JSON noise around the document. Never carries bandit's
+        `metrics` block or code snippets.
+        """
+        data = self._extract_json_object(output)
+        if data is None or not isinstance(data.get("results"), list):
+            return {"tool": "bandit", "raw_output": output[:2000]}
+
+        results = [r for r in data["results"] if isinstance(r, dict)]
+        raw_errors = data.get("errors")
+        errors = (
+            [e for e in raw_errors if isinstance(e, dict)]
+            if isinstance(raw_errors, list)
+            else []
+        )
+        levels = ("HIGH", "MEDIUM", "LOW")
+        severity = {lv: 0 for lv in levels}
+        confidence = {lv: 0 for lv in levels}
+        for r in results:
+            if r.get("issue_severity") in severity:
+                severity[r["issue_severity"]] += 1
+            if r.get("issue_confidence") in confidence:
+                confidence[r["issue_confidence"]] += 1
+        return {
+            "tool": "bandit",
+            "issue_count": len(results),
+            "severity_counts": severity,
+            "confidence_counts": confidence,
+            "error_count": len(errors),
+            "errors": [
+                {"filename": e.get("filename"), "reason": e.get("reason")}
+                for e in errors[: self._BANDIT_MAX_ERRORS]
+            ],
+            "security_issues": [
+                {k: r.get(k) for k in self._BANDIT_ISSUE_KEYS}
+                for r in results[: self._BANDIT_MAX_ISSUES]
+            ],
+            "security_issues_total": len(results),
+            "security_issues_truncated": len(results) > self._BANDIT_MAX_ISSUES,
+            "errors_total": len(errors),
+            "errors_truncated": len(errors) > self._BANDIT_MAX_ERRORS,
+        }
+
+    @staticmethod
+    def _extract_json_object(text: str) -> Dict[str, Any] | None:
+        """First JSON object in `text`, ignoring leading/trailing noise."""
+        decoder = json.JSONDecoder()
+        start = text.find("{")
+        while start != -1:
+            try:
+                value, _ = decoder.raw_decode(text, start)
+            except json.JSONDecodeError:
+                start = text.find("{", start + 1)
+                continue
+            if isinstance(value, dict) and "results" in value:
+                return value
+            start = text.find("{", start + 1)
+        return None
 
     def _parse_pytest_output(self, output: str) -> Dict[str, Any]:
         """Parse pytest output."""
