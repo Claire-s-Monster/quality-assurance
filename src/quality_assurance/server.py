@@ -21,6 +21,7 @@ from pydantic import BaseModel
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from core.container import Container
+from core.payload_bounds import bound_parsed_output
 from core.quality_orchestration_service import (
     QualityOrchestrationService,
     resolve_target_paths,
@@ -1943,7 +1944,14 @@ def _classify_pixi_aware_outcome(result: Dict[str, Any]) -> str:
         return "failed"
     if result.get("exit_code"):
         return "failed"
-    return "executed"
+    # "executed" needs positive evidence; anything unrecognised fails closed.
+    exit_code = result.get("exit_code")
+    exited_zero = (
+        isinstance(exit_code, int) and not isinstance(exit_code, bool) and not exit_code
+    )
+    if exited_zero or result.get("success") is True:
+        return "executed"
+    return "failed"
 
 
 def _describe_findings(tool_name: str, result: Dict[str, Any]) -> str:
@@ -1956,6 +1964,8 @@ def _describe_findings(tool_name: str, result: Dict[str, Any]) -> str:
 
 def _describe_errored(tool_name: str, result: Dict[str, Any]) -> str:
     """'<tool> errored', naming the tool's own error count when it reported one."""
+    if not any(k in result for k in ("success", "exit_code", "status", "error")):
+        return f"{tool_name} returned no execution status"
     error_count = (result.get("parsed_output") or {}).get("error_count")
     if tool_name == "bandit" and error_count and result.get("error"):
         return f"{tool_name} errored ({error_count} bandit errors while scanning)"
@@ -1970,6 +1980,8 @@ def _bound_pixi_aware_result(result: Dict[str, Any]) -> Dict[str, Any]:
     bounded = dict(result)
     parsed = result.get("parsed_output")
     has_parsed = isinstance(parsed, dict) and "raw_output" not in parsed
+    if isinstance(parsed, dict):
+        bounded["parsed_output"] = bound_parsed_output(parsed)
     for key in ("stdout", "stderr"):
         text = result.get(key)
         if not isinstance(text, str):
@@ -2026,7 +2038,7 @@ def _derive_pixi_aware_gate_verdict(
     for tool_name, result, outcome in zip(tools, results, outcomes, strict=False):
         if outcome == "unavailable":
             broken.append(f"{tool_name} unavailable")
-        elif outcome == "failed" and result.get("findings_detected"):
+        elif outcome in ("failed", "executed") and result.get("findings_detected"):
             with_findings.append(_describe_findings(tool_name, result))
         elif outcome == "failed":
             broken.append(_describe_errored(tool_name, result))
@@ -2039,13 +2051,27 @@ def _derive_pixi_aware_gate_verdict(
     return "passed", f"all {len(tools)} requested tools ran clean"
 
 
-def _describe_pixi_aware_failure(tool_name: str, result: Dict[str, Any]) -> str:
-    """Build a one-line description of why a tool failed, for recommendations."""
+_RECOMMENDATION_DETAIL_CAP = 300
+
+
+def _describe_pixi_aware_failure(
+    tool_name: str, result: Dict[str, Any], summary_only: bool = False
+) -> str:
+    """One-line description of why a tool failed, for recommendations.
+
+    Tool-derived text (error/stderr/message) is capped at 300 chars, and left
+    out entirely when summary_only (tool name and exit code/reason only).
+    """
+    exit_code = result.get("exit_code")
+    fallback = f"exit_code={exit_code}" if exit_code is not None else "unknown error"
+    if not any(k in result for k in ("success", "exit_code", "status", "error")):
+        fallback = "returned no execution status"
+    if summary_only:
+        return f"{tool_name}: {fallback}"
     detail = result.get("error") or result.get("stderr") or result.get("message")
     if not detail:
-        exit_code = result.get("exit_code")
-        detail = f"exit_code={exit_code}" if exit_code is not None else "unknown error"
-    return f"{tool_name}: {detail}"
+        return f"{tool_name}: {fallback}"
+    return f"{tool_name}: {str(detail)[:_RECOMMENDATION_DETAIL_CAP]}"
 
 
 @app.tool()
@@ -2224,7 +2250,7 @@ def quality_execute_pixi_aware_assessment(
 
         if tools_failed:
             failure_details = [
-                _describe_pixi_aware_failure(tool_name, result)
+                _describe_pixi_aware_failure(tool_name, result, bool(summary_only))
                 for tool_name, result, outcome in zip(
                     tools, results, outcomes, strict=False
                 )

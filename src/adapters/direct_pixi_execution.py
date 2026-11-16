@@ -25,6 +25,7 @@ from typing import Dict, Any, List, Optional, Set
 from pathlib import Path
 from dataclasses import dataclass
 
+from core.payload_bounds import bound_parsed_output
 from core.ports import LoggingPort
 
 _log = logging.getLogger(__name__)
@@ -897,11 +898,12 @@ class DirectPixiExecutionAdapter:
 
             # bandit's JSON goes to a temp file (outside the target repo), not
             # stdout: on a large repo stdout is huge and mixed with log noise.
-            output_file = self._new_bandit_output_file(quality_tool)
+            capture_notes: Dict[str, str] = {}
+            output_file = self._new_bandit_output_file(quality_tool, capture_notes)
             try:
                 if body is None or self._is_bare_tool_body(body, quality_tool):
                     body_mode = "task"
-                    if output_file:
+                    if quality_tool == "bandit":
                         optimized_args = self._with_bandit_file_output(
                             optimized_args, output_file
                         )
@@ -932,6 +934,7 @@ class DirectPixiExecutionAdapter:
             finally:
                 if output_file:
                     self._remove_file(output_file)
+            base_result.update(capture_notes)
             base_result["task_body_mode"] = body_mode
 
             # Enhance result with quality intelligence
@@ -1551,7 +1554,7 @@ class DirectPixiExecutionAdapter:
                 task_args = self._with_json_output(quality_tool, task_args)
             args, args_info = task_args, {"task_args_mode": "task_args"}
 
-        if output_file:
+        if quality_tool == "bandit":
             args = self._with_bandit_file_output(args, output_file)
 
         if environment:
@@ -1663,18 +1666,30 @@ class DirectPixiExecutionAdapter:
         return kept + json_flag
 
     @staticmethod
-    def _new_bandit_output_file(quality_tool: str) -> str | None:
-        """Path of a fresh temp file for bandit's JSON report (None otherwise)."""
+    def _new_bandit_output_file(
+        quality_tool: str, diagnostics: Dict[str, str] | None = None
+    ) -> str | None:
+        """Path of a fresh temp file for bandit's JSON report.
+
+        None for other tools, and for bandit when no temp file can be created;
+        that failure is recorded in `diagnostics["report_capture"]` and bandit
+        then reports JSON on stdout instead.
+        """
         if quality_tool != "bandit":
             return None
-        fd, path = tempfile.mkstemp(prefix="bandit-", suffix=".json")
+        try:
+            fd, path = tempfile.mkstemp(prefix="bandit-", suffix=".json")
+        except OSError as e:
+            if diagnostics is not None:
+                diagnostics["report_capture"] = f"stdout (tempfile unavailable: {e})"
+            return None
         os.close(fd)
         return path
 
     @staticmethod
-    def _with_bandit_file_output(args: List[str], output_file: str) -> List[str]:
+    def _with_bandit_file_output(args: List[str], output_file: str | None) -> List[str]:
         """Drop any caller -o/--output and -f/--format (and values); then write
-        JSON to `output_file`."""
+        JSON to `output_file` (or to stdout when there is none)."""
         kept: List[str] = []
         skip = False
         for arg in args:
@@ -1688,6 +1703,8 @@ class DirectPixiExecutionAdapter:
                 continue
             else:
                 kept.append(arg)
+        if output_file is None:
+            return kept + ["-f", "json"]
         return kept + ["-f", "json", "-o", output_file]
 
     @staticmethod
@@ -1838,28 +1855,37 @@ class DirectPixiExecutionAdapter:
             enhanced_result.pop("structured_output", None) or enhanced_result["stdout"]
         )
 
+        parsed_output = None
         if (enhanced_result["success"] or found_issues) and output_text:
             parsed_output = self._parse_quality_output(
                 quality_tool, output_text, enhanced_result["stderr"]
             )
-            if (
-                parsed_output
-                and parsed_output.get("error_count")
-                and (quality_tool == "bandit")
-            ):
-                # bandit could not analyse some files: not a trustworthy result,
-                # whatever it found. Reported through "error", like a crash.
-                enhanced_result["parsed_output"] = parsed_output
-                enhanced_result["error"] = (
-                    f"bandit reported {parsed_output['error_count']} error(s) "
-                    "while scanning (see parsed_output.errors)"
-                )
-            elif parsed_output and found_issues:
-                if self._parsed_finding_count(parsed_output) > 0:
+
+        if quality_tool == "bandit" and enhanced_result["success"]:
+            # A clean bandit pass needs a parsed report with a results list.
+            if not parsed_output or "issue_count" not in parsed_output:
+                if parsed_output:
                     enhanced_result["parsed_output"] = parsed_output
-                    enhanced_result["findings_detected"] = True
-            elif parsed_output:
-                enhanced_result["parsed_output"] = parsed_output
+                enhanced_result["error"] = "bandit produced no parseable report"
+                return enhanced_result
+
+        if not parsed_output:
+            return enhanced_result
+
+        if quality_tool == "bandit" and parsed_output.get("error_count"):
+            # bandit could not analyse some files: not a trustworthy result,
+            # whatever it found. Reported through "error", like a crash.
+            enhanced_result["parsed_output"] = bound_parsed_output(parsed_output)
+            enhanced_result["error"] = (
+                f"bandit reported {parsed_output['error_count']} error(s) "
+                "while scanning (see parsed_output.errors)"
+            )
+        elif self._parsed_finding_count(parsed_output) > 0:
+            # Findings count whatever the exit code (e.g. --exit-zero).
+            enhanced_result["parsed_output"] = bound_parsed_output(parsed_output)
+            enhanced_result["findings_detected"] = True
+        elif not found_issues:
+            enhanced_result["parsed_output"] = bound_parsed_output(parsed_output)
 
         return enhanced_result
 
@@ -1986,7 +2012,10 @@ class DirectPixiExecutionAdapter:
                 {k: r.get(k) for k in self._BANDIT_ISSUE_KEYS}
                 for r in results[: self._BANDIT_MAX_ISSUES]
             ],
+            "security_issues_total": len(results),
             "security_issues_truncated": len(results) > self._BANDIT_MAX_ISSUES,
+            "errors_total": len(errors),
+            "errors_truncated": len(errors) > self._BANDIT_MAX_ERRORS,
         }
 
     @staticmethod
