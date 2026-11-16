@@ -189,8 +189,15 @@ class TestSummaryOnlyTrimsFixedBlocks:
             ["mypy", "bandit", "ruff"],
             summary_only=True,
         )
-        without_entries = {k: v for k, v in result.items() if k != "assessment_results"}
-        assert len(json.dumps(without_entries)) < 1500
+        entries = result["assessment_results"]
+        assert len(entries) == 3
+        required = {"task_name", "exit_code", "findings_detected", "counts"}
+        allowed = required | {"error"}
+        for entry in entries:
+            assert required <= set(entry) <= allowed
+        # Measured 972 chars for 3 tools (whole response); 1500 leaves ~50% margin.
+        size = len(json.dumps(result))
+        assert size < 1500, size
 
     def test_default_output_keeps_fixed_blocks(
         self, server_module, monkeypatch, tmp_path
@@ -199,4 +206,7 @@ class TestSummaryOnlyTrimsFixedBlocks:
             server_module, monkeypatch, tmp_path, {"ruff": _RUFF_PASS}, ["ruff"]
         )
         for key in ("environment_info", "optimization_result", "pixi_intelligence"):
-            assert key in result
+            assert isinstance(result[key], dict), key
+            assert result[key], key
+        assert "available_tools" in result["environment_info"]
+        assert "templates_used" in result["pixi_intelligence"]
