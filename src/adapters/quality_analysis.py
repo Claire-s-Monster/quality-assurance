@@ -384,7 +384,7 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
             patterns["security_issues"] += metrics.security_issues_count
             patterns["dead_code_count"] += metrics.dead_code_count
             patterns["type_errors"] += metrics.type_errors
-            patterns["total_files"] += result.files_analyzed
+            patterns["total_files"] += result.files_analyzed or 0
             patterns["total_lines"] += metrics.total_lines
 
             if metrics.test_coverage_percentage is not None:

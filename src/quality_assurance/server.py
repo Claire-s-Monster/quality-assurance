@@ -1242,7 +1242,7 @@ def quality_detect_quality_patterns(
             },
             "pattern_types_analyzed": pattern_types or ["all"],
             "analysis_coverage": {
-                "files_analyzed": sum(r.files_analyzed for r in converted_results),
+                "files_analyzed": sum(r.files_analyzed or 0 for r in converted_results),
                 "tools_used": list(set(r.tool.value for r in converted_results)),
             },
             "timestamp": datetime.now().isoformat(),

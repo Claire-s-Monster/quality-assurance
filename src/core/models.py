@@ -226,7 +226,16 @@ class QualityAssessmentResult(BaseModel):
 
     # Assessment scope
     target_path: str = Field(description="Path that was assessed")
-    files_analyzed: int = Field(description="Number of files analyzed")
+    files_analyzed: Optional[int] = Field(
+        description="Number of files analyzed; None when the tool does not report it"
+    )
+    estimated_files_analyzed: Optional[int] = Field(
+        None,
+        description=(
+            "Rough line-based estimate (total lines // 50), set only when "
+            "files_analyzed is None. Not a file count."
+        ),
+    )
     excluded_patterns: List[str] = Field(
         default_factory=list, description="Patterns excluded from analysis"
     )

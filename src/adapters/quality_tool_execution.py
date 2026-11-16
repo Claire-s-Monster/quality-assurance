@@ -219,6 +219,38 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         result["target_paths_mode"] = "replaced"
         return result
 
+    def _reported_target_path(
+        self,
+        pixi_task: str,
+        target_path: str,
+        target_paths: Optional[List[str]],
+        project_path: Optional[str],
+        environment: Optional[str],
+    ) -> str:
+        """Describe what a lint run actually scanned.
+
+        Only the default "src/" with no explicit target_paths leaves the task
+        body running unchanged with its own paths; echoing "src/" then would
+        misstate the scope. Which paths are scanned is not altered here.
+        """
+        if target_paths or target_path != "src/":
+            return target_path
+        try:
+            workdir = project_path or self.pixi_executor.working_dir
+            body = self.pixi_executor._get_available_tasks(workdir, environment).get(
+                pixi_task
+            )
+        except (AttributeError, TypeError, OSError):
+            # Reporting is best-effort; never fail an assessment over it.
+            return target_path
+        if isinstance(body, list):
+            body = " ".join(str(t) for t in body)
+        if isinstance(body, str) and body:
+            return f"task-defined: {body}"
+        if not (Path(workdir) / "src").is_dir():
+            return "src/ (default; directory does not exist in project)"
+        return target_path
+
     def _describe_task_not_found(
         self, tool_value: str, project_path: Optional[str]
     ) -> tuple[str, str]:
@@ -389,10 +421,13 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 environment_auto_selected=env_auto,
                 target_paths_mode=result.get("target_paths_mode"),
                 target_paths_fallback_reason=result.get("target_paths_fallback_reason"),
-                target_path=target_path,
-                files_analyzed=metrics.total_lines // 50
+                target_path=self._reported_target_path(
+                    pixi_task, target_path, target_paths, project_path, environment
+                ),
+                files_analyzed=None,
+                estimated_files_analyzed=metrics.total_lines // 50
                 if metrics.total_lines > 0
-                else 1,  # Estimate
+                else None,
                 raw_output=result.get("stdout", "") + "\n" + result.get("stderr", ""),
                 parsed_metrics=metrics,
                 violations=violations,
