@@ -6,6 +6,7 @@ is only valid when the task body is the bare tool. When the body is a full
 command, the tool must be run directly in the right environment instead.
 """
 
+import os
 from unittest.mock import Mock, patch
 
 import pytest
@@ -40,6 +41,20 @@ def _run(adapter, task_name, tool, **kwargs):
     return result, mock_run
 
 
+class _TempJsonPath:
+    """Equals any absolute .json path (bandit's `-o` temp file)."""
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, str) and os.path.isabs(other) and other.endswith(".json")
+        )
+
+    def __repr__(self):
+        return "<temp .json path>"
+
+
+BANDIT_OUTPUT_FILE = _TempJsonPath()
+
 FULL_COMMAND_CASES = [
     (
         "lint",
@@ -67,6 +82,8 @@ FULL_COMMAND_CASES = [
             "tests/",
             "-f",
             "json",
+            "-o",
+            BANDIT_OUTPUT_FILE,
         ],
     ),
 ]

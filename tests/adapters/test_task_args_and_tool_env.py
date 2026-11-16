@@ -4,11 +4,25 @@ that actually provides the tool when run_quality_task runs a full-command task
 body directly.
 """
 
+import os
 from unittest.mock import Mock, patch
 
 import pytest
 
 from adapters.direct_pixi_execution import DirectPixiExecutionAdapter
+
+
+class _TempJsonPath:
+    """Equals any absolute .json path (bandit's `-o` temp file)."""
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, str) and os.path.isabs(other) and other.endswith(".json")
+        )
+
+    def __repr__(self):
+        return "<temp .json path>"
+
 
 MANIFEST = """
 [workspace]
@@ -126,6 +140,8 @@ class TestTaskArgsKept:
             "tests/",
             "-f",
             "json",
+            "-o",
+            _TempJsonPath(),
         ]
         assert result["task_args_mode"] == "task_args"
 
@@ -163,7 +179,14 @@ class TestTaskArgsKept:
             body,
             environment="quality-extended",
         )
-        assert mock_run.call_args[0][0][5:] == ["-r", "src/", "-f", "json"]
+        assert mock_run.call_args[0][0][5:] == [
+            "-r",
+            "src/",
+            "-f",
+            "json",
+            "-o",
+            _TempJsonPath(),
+        ]
 
     def test_no_json_flag_without_json_config(self, tmp_path):
         body = TOOL_ARGS["mypy"]
@@ -275,6 +298,8 @@ class TestPyprojectOnlyManifest:
             "tests/",
             "-f",
             "json",
+            "-o",
+            _TempJsonPath(),
         ]
         assert result["tool_environment_source"] == "tool_dependency"
 

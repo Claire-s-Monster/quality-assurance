@@ -1946,6 +1946,68 @@ def _classify_pixi_aware_outcome(result: Dict[str, Any]) -> str:
     return "executed"
 
 
+def _describe_findings(tool_name: str, result: Dict[str, Any]) -> str:
+    """Tool name, plus severity counts when the parsed output carries them."""
+    counts = (result.get("parsed_output") or {}).get("severity_counts")
+    if not isinstance(counts, dict) or not counts:
+        return tool_name
+    return f"{tool_name} (" + ", ".join(f"{k} {v}" for k, v in counts.items()) + ")"
+
+
+def _describe_errored(tool_name: str, result: Dict[str, Any]) -> str:
+    """'<tool> errored', naming the tool's own error count when it reported one."""
+    error_count = (result.get("parsed_output") or {}).get("error_count")
+    if tool_name == "bandit" and error_count and result.get("error"):
+        return f"{tool_name} errored ({error_count} bandit errors while scanning)"
+    return f"{tool_name} errored"
+
+
+_TEXT_CAP = 2000
+
+
+def _bound_pixi_aware_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Copy of a tool result with stdout/stderr capped and parsed stdout dropped."""
+    bounded = dict(result)
+    parsed = result.get("parsed_output")
+    has_parsed = isinstance(parsed, dict) and "raw_output" not in parsed
+    for key in ("stdout", "stderr"):
+        text = result.get(key)
+        if not isinstance(text, str):
+            continue
+        bounded[f"{key}_length"] = len(text)
+        if key == "stdout" and has_parsed and text:
+            bounded[key] = ""
+            bounded["stdout_note"] = "omitted: parsed_output carries the data"
+            bounded["stdout_truncated"] = False
+            continue
+        bounded[key] = text[:_TEXT_CAP]
+        bounded[f"{key}_truncated"] = len(text) > _TEXT_CAP
+    return bounded
+
+
+def _summarize_pixi_aware_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Minimal per-tool entry for summary_only."""
+    parsed = result.get("parsed_output")
+    parsed = parsed if isinstance(parsed, dict) else {}
+    counts = {
+        key: parsed[key]
+        for key in ("issue_count", "violation_count", "error_count", "severity_counts")
+        if key in parsed
+    }
+    summary: Dict[str, Any] = {
+        "task_name": result.get("task_name") or result.get("tool"),
+        "exit_code": result.get("exit_code"),
+        "findings_detected": bool(result.get("findings_detected")),
+        "counts": counts,
+    }
+    error = result.get("error") or (
+        result.get("message") if result.get("status") == "unavailable" else None
+    )
+    if error:
+        summary["error"] = error
+    return summary
+
+
 def _derive_pixi_aware_gate_verdict(
     tools: List[str], results: List[Dict[str, Any]], outcomes: List[str]
 ) -> Tuple[str, str]:
@@ -1965,9 +2027,11 @@ def _derive_pixi_aware_gate_verdict(
         if outcome == "unavailable":
             broken.append(f"{tool_name} unavailable")
         elif outcome == "failed" and result.get("findings_detected"):
-            with_findings.append(tool_name)
+            with_findings.append(_describe_findings(tool_name, result))
         elif outcome == "failed":
-            broken.append(f"{tool_name} errored")
+            broken.append(_describe_errored(tool_name, result))
+        elif outcome != "executed":
+            broken.append(f"{tool_name} in unknown state {outcome!r}")
     if broken:
         return "error", "; ".join(broken)
     if with_findings:
@@ -1992,6 +2056,7 @@ def quality_execute_pixi_aware_assessment(
     use_pixi_templates: Optional[bool] = True,
     project_path: Optional[str] = None,
     environment: Optional[str] = None,
+    summary_only: bool = False,
 ) -> Dict[str, Any]:
     """
     Execute quality assessment using pixi-aware task orchestration.
@@ -2009,6 +2074,7 @@ def quality_execute_pixi_aware_assessment(
         use_pixi_templates: Use pixi task templates
         project_path: Absolute path to the project root to analyze (default: server working directory)
         environment: Pixi environment to run the task in (e.g. "quality", "dev"). Omit unless the task name is ambiguous across environments; pixi will name the valid candidates if it is.
+        summary_only: When true, each assessment_results entry is reduced to task_name, exit_code, findings_detected, counts (issue/violation/error counts, severity_counts) and error. Otherwise stdout/stderr are capped at 2000 chars (see *_truncated / *_length) and stdout is omitted when parsed_output carries the data.
 
     Returns:
         Dict with pixi-aware assessment results, environment info, and optimization data.
@@ -2189,7 +2255,12 @@ def quality_execute_pixi_aware_assessment(
                 if isinstance(optimization_result, dict)
                 else (optimization_result.dict() if optimization_result else None)
             ),
-            "assessment_results": results,
+            "assessment_results": [
+                _summarize_pixi_aware_result(r)
+                if summary_only
+                else _bound_pixi_aware_result(r)
+                for r in results
+            ],
             "execution_summary": {
                 "tools_requested": len(tools),
                 "tools_executed": tools_executed,
