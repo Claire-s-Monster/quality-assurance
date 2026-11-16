@@ -357,6 +357,7 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
             "average_complexity": 0.0,
             "maintainability_index": 0.0,
             "total_files": 0,
+            "files_analyzed_unknown": 0,
             "total_lines": 0,
             "violation_hotspots": {},
             "most_common_violations": {},
@@ -384,7 +385,10 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
             patterns["security_issues"] += metrics.security_issues_count
             patterns["dead_code_count"] += metrics.dead_code_count
             patterns["type_errors"] += metrics.type_errors
-            patterns["total_files"] += result.files_analyzed or 0
+            if result.files_analyzed is None:
+                patterns["files_analyzed_unknown"] += 1
+            else:
+                patterns["total_files"] += result.files_analyzed
             patterns["total_lines"] += metrics.total_lines
 
             if metrics.test_coverage_percentage is not None:

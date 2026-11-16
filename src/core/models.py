@@ -225,7 +225,10 @@ class QualityAssessmentResult(BaseModel):
     )
 
     # Assessment scope
-    target_path: str = Field(description="Path that was assessed")
+    target_path: str = Field(description="Path that was requested (or the default)")
+    effective_scope: Optional[str] = Field(
+        None, description="What was actually scanned (task-defined, default, or paths)"
+    )
     files_analyzed: Optional[int] = Field(
         description="Number of files analyzed; None when the tool does not report it"
     )

@@ -43,7 +43,9 @@ class _FakeLintResult:
         self.environment_used = None
         self.environment_auto_selected = False
         self.target_path = "src/"
+        self.effective_scope = "src/"
         self.files_analyzed = 0
+        self.estimated_files_analyzed = None
         self.violations = []
         self.parsed_metrics = _FakeMetrics()
         self.auto_fix_available = False

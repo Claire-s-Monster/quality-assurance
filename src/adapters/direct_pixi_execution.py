@@ -997,7 +997,11 @@ class DirectPixiExecutionAdapter:
             QualityEnvironmentInfo with complete environment analysis
         """
         working_dir = working_dir or self.working_dir
-        cache_key = str(Path(working_dir).resolve())
+        detection_start = time.time()
+        try:
+            cache_key = str(Path(working_dir).resolve())
+        except (OSError, RuntimeError):
+            cache_key = os.path.abspath(working_dir)
 
         # Check cache first (per project)
         cached = self._cached_env_info(cache_key)
@@ -1081,8 +1085,10 @@ class DirectPixiExecutionAdapter:
                 performance_indicators=performance_indicators,
             )
 
-            self._quality_env_cache.pop(cache_key, None)
-            self._quality_env_cache[cache_key] = (env_info, time.time())
+            existing = self._quality_env_cache.get(cache_key)
+            if existing is None or existing[1] <= detection_start:
+                self._quality_env_cache.pop(cache_key, None)
+                self._quality_env_cache[cache_key] = (env_info, time.time())
             while len(self._quality_env_cache) > self._cache_max_entries:
                 del self._quality_env_cache[next(iter(self._quality_env_cache))]
 
@@ -1383,7 +1389,7 @@ class DirectPixiExecutionAdapter:
         info, timestamp = entry
         if (time.time() - timestamp) < self._cache_ttl:
             return info
-        del self._quality_env_cache[cache_key]
+        self._quality_env_cache.pop(cache_key, None)
         return None
 
     def _analyze_quality_tool(

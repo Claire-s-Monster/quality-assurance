@@ -5,13 +5,17 @@ Regression: detect_quality_environment memoized one result in a single slot,
 so for the TTL every project got the first-analysed project's tasks/tools.
 """
 
+import os
+import time
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
 from adapters.direct_pixi_execution import DirectPixiExecutionAdapter
+from adapters.quality_analysis import QualityAnalysisAdapter
 from adapters.quality_tool_execution import QualityToolExecutionAdapter
-from core.models import QualityMetrics, QualityTool
+from core.models import ExecutionStatus, QualityMetrics, QualityTool
 
 
 @pytest.fixture
@@ -108,6 +112,28 @@ class TestEnvCacheKeyedByProject:
         _detect(adapter, dirs[-1], tasks_mock, version_mock)
         assert tasks_mock.call_count == before
 
+    def test_resolve_failure_falls_back_to_abspath(self, adapter, tmp_path):
+        tasks_mock = Mock(return_value={"lint": "ruff check src/"})
+        version_mock = Mock(return_value=None)
+
+        with patch.object(Path, "resolve", side_effect=RuntimeError("loop")):
+            info = _detect(adapter, tmp_path, tasks_mock, version_mock)
+
+        assert "ruff" in info.available_tools
+        assert os.path.abspath(str(tmp_path)) in adapter._quality_env_cache
+
+    def test_newer_concurrent_entry_is_not_overwritten(self, adapter, tmp_path):
+        key = str(tmp_path.resolve())
+        newer = (Mock(name="newer_info"), time.time() + 1000)
+        tasks_mock = Mock(return_value={"lint": "ruff check src/"})
+
+        def plant_newer(tool, wd):
+            adapter._quality_env_cache[key] = newer
+
+        _detect(adapter, tmp_path, tasks_mock, Mock(side_effect=plant_newer))
+
+        assert adapter._quality_env_cache[key] is newer
+
 
 def _lint_executor(tmp_path, body):
     executor = Mock()
@@ -123,6 +149,38 @@ def _lint_adapter(tmp_path, body):
     return QualityToolExecutionAdapter(_lint_executor(tmp_path, body))
 
 
+class TestFilesAnalyzedAggregation:
+    def test_none_is_skipped_and_counted_as_unknown(self):
+        metrics = QualityMetrics(
+            overall_score=10.0,
+            total_violations=0,
+            critical_violations=0,
+            high_violations=0,
+            medium_violations=0,
+            low_violations=0,
+            total_lines=0,
+            code_lines=0,
+            comment_lines=0,
+            blank_lines=0,
+        )
+
+        def result(files):
+            return Mock(
+                status=ExecutionStatus.SUCCESS,
+                tool=QualityTool.RUFF,
+                parsed_metrics=metrics,
+                violations=[],
+                files_analyzed=files,
+            )
+
+        patterns = QualityAnalysisAdapter().detect_quality_patterns(
+            [result(None), result(7), result(None), result(3)]
+        )
+
+        assert patterns["total_files"] == 10
+        assert patterns["files_analyzed_unknown"] == 2
+
+
 class TestLintAssessmentMetadata:
     def test_task_with_own_paths_does_not_report_src(self, tmp_path):
         (tmp_path / "lib").mkdir()
@@ -132,8 +190,8 @@ class TestLintAssessmentMetadata:
             QualityTool.RUFF, project_path=str(tmp_path)
         )
 
-        assert result.target_path != "src/"
-        assert "lib/" in result.target_path
+        assert result.target_path == "src/"  # requested/default, unchanged
+        assert result.effective_scope == "task-defined: ruff check lib/"
 
     def test_missing_default_src_is_not_claimed(self, tmp_path):
         adapter = _lint_adapter(tmp_path, "")
@@ -142,8 +200,11 @@ class TestLintAssessmentMetadata:
             QualityTool.RUFF, project_path=str(tmp_path)
         )
 
-        assert result.target_path != "src/"
-        assert "src/" in result.target_path  # explains that it does not exist
+        assert result.target_path == "src/"
+        assert (
+            result.effective_scope == "src/ (default; directory does not exist "
+            "in project)"
+        )
 
     def test_explicit_target_path_is_echoed(self, tmp_path):
         adapter = _lint_adapter(tmp_path, "ruff check lib/")
@@ -153,6 +214,7 @@ class TestLintAssessmentMetadata:
         )
 
         assert result.target_path == "pkg/"
+        assert result.effective_scope == "pkg/"
 
     def test_files_analyzed_is_not_the_line_based_fake(self, tmp_path):
         (tmp_path / "lib").mkdir()

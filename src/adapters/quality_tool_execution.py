@@ -219,7 +219,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         result["target_paths_mode"] = "replaced"
         return result
 
-    def _reported_target_path(
+    def _effective_scope(
         self,
         pixi_task: str,
         target_path: str,
@@ -233,7 +233,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         body running unchanged with its own paths; echoing "src/" then would
         misstate the scope. Which paths are scanned is not altered here.
         """
-        if target_paths or target_path != "src/":
+        if target_paths:
+            return " ".join(target_paths)
+        if target_path != "src/":
             return target_path
         try:
             workdir = project_path or self.pixi_executor.working_dir
@@ -421,7 +423,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 environment_auto_selected=env_auto,
                 target_paths_mode=result.get("target_paths_mode"),
                 target_paths_fallback_reason=result.get("target_paths_fallback_reason"),
-                target_path=self._reported_target_path(
+                target_path=target_path,
+                effective_scope=self._effective_scope(
                     pixi_task, target_path, target_paths, project_path, environment
                 ),
                 files_analyzed=None,
