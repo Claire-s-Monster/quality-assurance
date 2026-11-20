@@ -16,9 +16,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
+import pytest  # noqa: E402
+
 from adapters.direct_pixi_execution import TOOL_TASK_ALIASES  # noqa: E402
 from adapters.quality_tool_execution import QualityToolExecutionAdapter  # noqa: E402
-from core.models import ExecutionStatus  # noqa: E402
+from core.models import ExecutionStatus, QualityTool  # noqa: E402
 
 
 class _FakePixiExecutor:
@@ -54,9 +56,16 @@ class _FakePixiExecutor:
     def list_tasks(self, working_dir=None):
         return {"tasks": dict(self._available_tasks)}
 
+    def _get_available_tasks(self, working_dir=None, environment=None):
+        return dict(self._available_tasks)
+
     def run_task(
         self, task_name, args=None, timeout=300, working_dir=None, environment=None
     ):
+        self.run_calls = [
+            *getattr(self, "run_calls", []),
+            (task_name, list(args or [])),
+        ]
         return dict(self._run_result)
 
 
@@ -117,6 +126,141 @@ class TestTypecheckTaskResolution:
         assert result.status == ExecutionStatus.ERROR
         assert "typecheck" in result.raw_output
         assert "type-check" in result.raw_output
+
+
+PYRIGHT_FINDINGS = """\
+/abs/src/a.py
+  /abs/src/a.py:12:5 - error: Message text (reportFooBar)
+  /abs/src/a.py:20:1 - error: "x" is not defined (reportUndefinedVariable)
+/abs/src/b.py
+  /abs/src/b.py:3:1 - warning: Import "os" is not accessed (reportUnusedImport)
+2 errors, 1 warning, 0 informations
+"""
+PYRIGHT_CLEAN = "0 errors, 0 warnings, 0 informations \n"
+MYPY_ONLY_FLAGS = (
+    "--show-error-codes",
+    "--show-column-numbers",
+    "--strict",
+    "--no-incremental",
+    "--cache-dir",
+)
+
+
+def _typecheck(body, run_result, **kwargs):
+    executor = _FakePixiExecutor({"typecheck": body}, run_result=run_result)
+    adapter = QualityToolExecutionAdapter(direct_pixi_executor=executor)
+    result = adapter.execute_typecheck_assessment(project_path="/tmp/project", **kwargs)
+    return result, executor
+
+
+def _run(exit_code, stdout="", stderr=""):
+    return {
+        "success": exit_code == 0,
+        "stdout": stdout,
+        "stderr": stderr,
+        "exit_code": exit_code,
+    }
+
+
+class TestPyrightTypecheck:
+    """A pyright `typecheck` task must run as defined, be parsed as pyright
+    and be reported as pyright (issue #9)."""
+
+    def test_no_mypy_flags_and_tool_is_pyright(self):
+        result, executor = _typecheck(
+            "pyright src/",
+            _run(1, PYRIGHT_FINDINGS),
+            strict_mode=True,
+            incremental=False,
+            cache_dir="/tmp/c",
+        )
+        args = executor.run_calls[0][1]
+        assert not [a for a in args if a in MYPY_ONLY_FLAGS]
+        assert result.tool.value == "pyright"
+
+    def test_exit_1_with_diagnostics_is_findings(self):
+        result, _ = _typecheck("pyright src/", _run(1, PYRIGHT_FINDINGS))
+        assert result.status == ExecutionStatus.WARNING
+        assert result.parsed_metrics.type_errors == 2
+        assert len(result.violations) == 3
+        assert {v.tool.value for v in result.violations} == {"pyright"}
+        assert result.violations[0].line_number == 12
+        assert result.violations[0].rule_code == "reportFooBar"
+
+    def test_clean_exit_0_passes(self):
+        result, _ = _typecheck("pyright src/", _run(0, PYRIGHT_CLEAN))
+        assert result.status == ExecutionStatus.SUCCESS
+        assert result.parsed_metrics.type_errors == 0
+
+    def test_exit_4_is_an_error(self):
+        result, _ = _typecheck(
+            "pyright src/", _run(4, "", "Unexpected option --show-error-codes")
+        )
+        assert result.status == ExecutionStatus.ERROR
+
+    def test_requested_pyright_resolves_typecheck_task(self):
+        executor = _FakePixiExecutor(
+            {"typecheck": "pyright src/"}, run_result=_run(0, PYRIGHT_CLEAN)
+        )
+        adapter = QualityToolExecutionAdapter(direct_pixi_executor=executor)
+        result = adapter.execute_typecheck_assessment(
+            tool=QualityTool("pyright"), project_path="/tmp/project"
+        )
+        assert result.pixi_task_used == "typecheck"
+        assert result.tool.value == "pyright"
+
+    def test_mypy_body_still_gets_mypy_flags_and_tool(self):
+        result, executor = _typecheck("mypy src/", _run(0, ""), strict_mode=True)
+        args = executor.run_calls[0][1]
+        assert "--show-error-codes" in args
+        assert "--show-column-numbers" in args
+        assert "--strict" in args
+        assert result.tool.value == "mypy"
+
+
+class TestPyrightMultiLineDiagnostic:
+    def test_rule_and_full_message_come_from_the_continuation_lines(self):
+        from adapters.direct_pixi_execution import parse_pyright_text
+
+        output = (
+            "/abs/src/a.py\n"
+            "  /abs/src/a.py:12:5 - error: Argument of type X is wrong\n"
+            '    "X" is not assignable to "Y" (reportArgumentType)\n'
+            "  /abs/src/a.py:20:1 - warning: Unused (reportUnusedImport)\n"
+            "1 error, 1 warning, 0 informations \n"
+        )
+        diagnostics, error_count = parse_pyright_text(output)
+
+        assert error_count == 1
+        assert len(diagnostics) == 2
+        _, _, _, severity, message, rule = diagnostics[0]
+        assert (severity, rule) == ("error", "reportArgumentType")
+        assert "Argument of type X is wrong" in message
+        assert '"X" is not assignable to "Y"' in message
+        assert "reportArgumentType" not in message
+        assert diagnostics[1][5] == "reportUnusedImport"
+
+
+class TestDetectTypechecker:
+    @pytest.mark.parametrize(
+        "body,expected",
+        [
+            ("pyright src/", "pyright"),
+            ("basedpyright", "pyright"),
+            ("pixi run -e quality pyright src/", "pyright"),
+            (["pyright", "src/"], "pyright"),
+            ("mypy src/", "mypy"),
+            ("python -m mypy src", "mypy"),
+            ("uv run mypy src", "mypy"),
+            ("flake8 src/", None),
+            ("echo 'a b", None),
+            ("", None),
+        ],
+    )
+    def test_classifies_first_real_token(self, body, expected):
+        from adapters.direct_pixi_execution import detect_typechecker
+
+        assert detect_typechecker(body) == expected
 
 
 class TestSecurityScanHonestFailure:

@@ -156,6 +156,59 @@ class TestBareToolBodyKeepsTaskInvocation:
         assert mock_run.call_args[0][0][4] == "lint"
 
 
+PYRIGHT_TEXT = (
+    "/abs/src/a.py\n"
+    "  /abs/src/a.py:12:5 - error: Message text (reportFooBar)\n"
+    "  /abs/src/a.py:20:1 - error: Other (reportUndefinedVariable)\n"
+    "  /abs/src/b.py:3:1 - warning: Unused (reportUnusedImport)\n"
+    "2 errors, 1 warning, 0 informations \n"
+)
+
+
+class TestPyrightBodyRunsAsDefined:
+    """A pyright typecheck task is run as defined (no mypy builder args),
+    parsed as pyright and reported as pyright (issue #9)."""
+
+    @staticmethod
+    def _assess(requested_tool, code, stdout, stderr=""):
+        adapter = _make_adapter({"typecheck": "pyright src/"})
+        adapter.detect_quality_environment.return_value.available_tools.add("pyright")
+        proc = Mock(returncode=code, stdout=stdout, stderr=stderr)
+        with patch(
+            "adapters.direct_pixi_execution.subprocess.run", return_value=proc
+        ) as mock_run:
+            result = adapter.run_quality_task(
+                task_name="typecheck",
+                quality_tool=requested_tool,
+                target_paths=["src/"],
+                quality_config={"output_format": "json"},
+                environment="quality",
+            )
+        return result, mock_run.call_args[0][0]
+
+    @pytest.mark.parametrize("requested", ["mypy", "pyright"])
+    def test_findings_without_mypy_args(self, requested):
+        result, argv = self._assess(requested, 1, PYRIGHT_TEXT)
+        assert "--output" not in argv
+        assert argv[-1] == "typecheck"
+        assert result["findings_detected"] is True
+        assert result["parsed_output"]["error_count"] == 2
+        assert result["quality_intelligence"]["tool_name"] == "pyright"
+
+    def test_clean_run_has_no_findings(self):
+        result, _ = self._assess(
+            "pyright", 0, "0 errors, 0 warnings, 0 informations \n"
+        )
+        assert result["success"] is True
+        assert not result.get("findings_detected")
+        assert result["parsed_output"]["error_count"] == 0
+
+    def test_exit_4_is_not_findings(self):
+        result, _ = self._assess("pyright", 4, "", "Unexpected option")
+        assert not result.get("findings_detected")
+        assert "parsed_output" not in result
+
+
 class TestUnreadableBody:
     def test_reports_failure_without_running_anything(self):
         adapter = _make_adapter({"lint": 42})

@@ -69,6 +69,18 @@ def _lint(root, body, paths):
     return ex.calls[0][1]
 
 
+def test_basedpyright_body_gets_paths_swapped_and_runs_basedpyright(root):
+    ex = Executor(root, {"typecheck": "basedpyright lib/ --level error"})
+    QualityToolExecutionAdapter(ex).execute_typecheck_assessment(
+        tool=QualityTool.PYRIGHT, target_paths=["pkg/"], project_path=str(root)
+    )
+    task_name, args, kwargs = ex.calls[0]
+
+    assert task_name == "basedpyright"
+    assert args == ["pkg/", "--level", "error"]
+    assert kwargs["as_command"] is True
+
+
 def test_non_src_directory_is_swapped(root):
     args = _lint(root, "ruff check lib/ --select=F", ["pkg/"])
 
