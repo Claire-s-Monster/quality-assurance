@@ -81,6 +81,44 @@ def test_basedpyright_body_gets_paths_swapped_and_runs_basedpyright(root):
     assert kwargs["as_command"] is True
 
 
+def _typecheck(root, body, paths):
+    ex = Executor(root, {"typecheck": body})
+    QualityToolExecutionAdapter(ex).execute_typecheck_assessment(
+        tool=QualityTool.PYRIGHT, target_paths=paths, project_path=str(root)
+    )
+    return ex.calls[0]
+
+
+def test_pyright_option_value_naming_basedpyright_stays_pyright(root):
+    task_name, args, _ = _typecheck(
+        root, "pyright --project basedpyright_cfg src/", ["pkg/"]
+    )
+
+    assert task_name == "pyright"
+    assert args == ["--project", "basedpyright_cfg", "pkg/"]
+
+
+@pytest.mark.parametrize(
+    "option", ["-p", "--project", "--venvpath", "--typeshedpath", "-t"]
+)
+def test_pyright_option_values_are_not_swapped_as_paths(root, option):
+    _, args, _ = _typecheck(root, f"pyright {option} lib src/", ["pkg/"])
+
+    assert args == [option, "lib", "pkg/"]
+
+
+def test_pyright_threads_without_a_number_does_not_swallow_the_path(root):
+    _, args, _ = _typecheck(root, "pyright --threads src/", ["pkg/"])
+
+    assert args == ["--threads", "pkg/"]
+
+
+def test_pyright_threads_with_a_number_keeps_it(root):
+    _, args, _ = _typecheck(root, "pyright --threads 4 src/", ["pkg/"])
+
+    assert args == ["--threads", "4", "pkg/"]
+
+
 def test_non_src_directory_is_swapped(root):
     args = _lint(root, "ruff check lib/ --select=F", ["pkg/"])
 

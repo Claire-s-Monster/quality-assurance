@@ -86,15 +86,66 @@ PYRIGHT_SUMMARY_RE = re.compile(
 )
 
 
+PyrightDiagnostic = tuple[str, int, int, str, str, Optional[str]]
+
+
+def _pyright_json(output: str) -> Optional[Dict[str, Any]]:
+    """The `pyright --outputjson` report in `output`, or None."""
+    start = output.find("{")
+    if start < 0:
+        return None
+    try:
+        data, _ = json.JSONDecoder().raw_decode(output[start:])
+    except json.JSONDecodeError:
+        return None
+    if isinstance(data, dict) and "generalDiagnostics" in data:
+        return data
+    return None
+
+
+def _parse_pyright_json(data: Dict[str, Any]) -> tuple[List[PyrightDiagnostic], int]:
+    """Diagnostics (1-based line/column) and error count of a pyright JSON report."""
+    diagnostics: List[PyrightDiagnostic] = []
+    for entry in data.get("generalDiagnostics") or []:
+        start = (entry.get("range") or {}).get("start") or {}
+        diagnostics.append(
+            (
+                str(entry.get("file", "")),
+                int(start.get("line", 0)) + 1,
+                int(start.get("character", 0)) + 1,
+                str(entry.get("severity", "error")),
+                str(entry.get("message", "")),
+                entry.get("rule"),
+            )
+        )
+    error_count = sum(1 for d in diagnostics if d[3] == "error")
+    summary_errors = (data.get("summary") or {}).get("errorCount")
+    if isinstance(summary_errors, int):
+        error_count = max(error_count, summary_errors)
+    return diagnostics, error_count
+
+
+def is_pyright_output(output: str) -> bool:
+    """Whether `output` is a pyright text or JSON report (not just noise)."""
+    return bool(
+        PYRIGHT_SUMMARY_RE.search(output)
+        or any(PYRIGHT_DIAGNOSTIC_RE.match(line) for line in output.splitlines())
+        or _pyright_json(output)
+    )
+
+
 def parse_pyright_text(
     output: str,
-) -> tuple[List[tuple[str, int, int, str, str, Optional[str]]], int]:
-    """Parse pyright text output.
+) -> tuple[List[PyrightDiagnostic], int]:
+    """Parse pyright output (text, or `--outputjson`).
 
     Returns (diagnostics, error_count); each diagnostic is (file, line, column,
-    severity, message, rule). error_count is the summary line's when it is
-    larger than the number of parsed error lines.
+    severity, message, rule). error_count is the summary's when it is larger
+    than the number of parsed error diagnostics.
     """
+    report = _pyright_json(output)
+    if report is not None:
+        return _parse_pyright_json(report)
     # Indented lines after a diagnostic continue its message; the (reportRule)
     # suffix is then on the last of them.
     entries: List[List[Any]] = []
@@ -120,12 +171,15 @@ def parse_pyright_text(
     return diagnostics, error_count
 
 
-def detect_typechecker(body: Any) -> Optional[str]:
-    """Classify a task body's type checker: "pyright", "mypy" or None.
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_]\w*=")
 
-    Looks at the first real token, after unwrapping `pixi run [-e X]`,
-    `uv run`, `python -m` and `env`. None when the body is not recognised,
-    so callers keep the checker the user asked for.
+
+def typechecker_executable(body: Any) -> Optional[str]:
+    """The type checker executable a task body runs (e.g. "basedpyright"), or None.
+
+    Looks at the first real command token, after unwrapping `NAME=value`
+    assignments, `env [-i|-u X|-C X] [NAME=value]...`, `pixi run [-e X]`,
+    `uv run` and `python -m`.
     """
     if isinstance(body, str):
         try:
@@ -146,9 +200,24 @@ def detect_typechecker(body: Any) -> Optional[str]:
             i += 2
         elif tokens[i] == "env":
             i += 1
+            while i < len(tokens) and tokens[i].startswith("-"):
+                i += 2 if tokens[i] in ("-u", "--unset", "-C", "--chdir") else 1
+        elif _ENV_ASSIGNMENT_RE.match(tokens[i]):
+            i += 1
         else:
             break
-    return _TYPECHECKERS.get(Path(tokens[i]).name) if i < len(tokens) else None
+    name = Path(tokens[i]).name if i < len(tokens) else None
+    return name if name in _TYPECHECKERS else None
+
+
+def detect_typechecker(body: Any) -> Optional[str]:
+    """Classify a task body's type checker: "pyright", "mypy" or None.
+
+    None when the body is not recognised, so callers keep the checker the
+    user asked for. See typechecker_executable for the prefixes unwrapped.
+    """
+    executable = typechecker_executable(body)
+    return _TYPECHECKERS[executable] if executable else None
 
 
 _RUFF_NON_CHECK_COMMANDS = frozenset(
@@ -944,10 +1013,11 @@ class DirectPixiExecutionAdapter:
             # mypy's builder args are invalid for it, so it runs as defined,
             # and it needs no separately detected "mypy"/"pyright" tool.
             body = self._get_available_tasks(working_dir, environment).get(task_name)
+            pyright_task = False
             if quality_tool in ("mypy", "pyright") and detect_typechecker(body) == (
                 "pyright"
             ):
-                quality_tool = "pyright"
+                quality_tool, pyright_task = "pyright", True
             elif quality_tool not in env_info.available_tools:
                 return {
                     "success": False,
@@ -990,18 +1060,10 @@ class DirectPixiExecutionAdapter:
             output_file = self._new_bandit_output_file(quality_tool, capture_notes)
             try:
                 if quality_tool == "pyright":
-                    body_mode = "task_as_defined"
-                    capture_notes["task_args_note"] = (
-                        "pyright task run as defined; target_paths and "
-                        "quality_config were not applied"
+                    base_result, body_mode, note = self._run_pyright_task(
+                        task_name, body, timeout, working_dir, environment
                     )
-                    base_result = self.run_task(
-                        task_name=task_name,
-                        args=[],
-                        timeout=timeout,
-                        working_dir=working_dir,
-                        environment=environment,
-                    )
+                    capture_notes["task_args_note"] = note
                 elif body is None or self._is_bare_tool_body(body, quality_tool):
                     body_mode = "task"
                     if quality_tool == "bandit":
@@ -1042,6 +1104,10 @@ class DirectPixiExecutionAdapter:
             enhanced_result = self._enhance_quality_result(
                 base_result, quality_tool, env_info, start_time
             )
+            # The task's checker ran, so it is available whether or not it was
+            # separately detected in the environment.
+            if pyright_task and not is_execution_failure(base_result):
+                enhanced_result["quality_intelligence"]["tool_available"] = True
 
             return enhanced_result
 
@@ -1639,6 +1705,60 @@ class DirectPixiExecutionAdapter:
             "cache_friendly": "ruff" in available_tools,
         }
 
+    def _run_pyright_task(
+        self,
+        task_name: str,
+        body: str | List[str] | None,
+        timeout: int,
+        working_dir: str,
+        environment: str | None,
+    ) -> tuple[Dict[str, Any], str, str]:
+        """Run a pyright task without any builder args.
+
+        A non-bare body that is a single invocation runs as its own argv (so
+        the task's `depends-on` tasks do not run), like other non-bare bodies.
+        A bare body, or one that cannot be parsed, runs the task as defined.
+        Returns (result, task_body_mode, task_args_note).
+        """
+        executable = typechecker_executable(body)
+        if (
+            body is not None
+            and executable
+            and not self._is_bare_tool_body(body, executable)
+        ):
+            _, args, _ = self._parse_task_body_args(body, "pyright")
+            if args is not None:
+                result = self._run_tool_directly(
+                    task_name,
+                    "pyright",
+                    body,
+                    [],
+                    {},
+                    timeout,
+                    working_dir,
+                    environment,
+                    executable=executable,
+                )
+                return (
+                    result,
+                    "direct_tool",
+                    "pyright body run as its own command; target_paths and "
+                    "quality_config were not applied",
+                )
+        result = self.run_task(
+            task_name=task_name,
+            args=[],
+            timeout=timeout,
+            working_dir=working_dir,
+            environment=environment,
+        )
+        return (
+            result,
+            "task_as_defined",
+            "pyright task run as defined; target_paths and quality_config "
+            "were not applied",
+        )
+
     def _run_tool_directly(
         self,
         task_name: str,
@@ -1650,6 +1770,7 @@ class DirectPixiExecutionAdapter:
         working_dir: str,
         environment: str | None,
         output_file: str | None = None,
+        executable: str | None = None,
     ) -> Dict[str, Any]:
         """Run the tool itself for an alias task whose body is a full command.
 
@@ -1678,7 +1799,9 @@ class DirectPixiExecutionAdapter:
         elif body_env:
             environment, source = body_env, "task_body"
         else:
-            providers = self.environments_providing_tool(quality_tool, working_dir)
+            providers = self.environments_providing_tool(
+                executable or quality_tool, working_dir
+            )
             if providers is not None and not providers:
                 message = (
                     f"{quality_tool} is not installed in any pixi environment "
@@ -1700,7 +1823,7 @@ class DirectPixiExecutionAdapter:
             )
 
         result = self.run_task(
-            task_name=quality_tool,
+            task_name=executable or quality_tool,
             args=args,
             timeout=timeout,
             working_dir=working_dir,
@@ -1997,6 +2120,11 @@ class DirectPixiExecutionAdapter:
                 f"bandit reported {parsed_output['error_count']} error(s) "
                 "while scanning (see parsed_output.errors)"
             )
+        elif quality_tool == "pyright" and found_issues:
+            # pyright exits 1 whenever it reports diagnostics; any parsed
+            # diagnostic or summary line is findings (even warnings only).
+            enhanced_result["parsed_output"] = bound_parsed_output(parsed_output)
+            enhanced_result["findings_detected"] = True
         elif self._parsed_finding_count(parsed_output) > 0:
             # Findings count whatever the exit code (e.g. --exit-zero).
             enhanced_result["parsed_output"] = bound_parsed_output(parsed_output)
@@ -2083,15 +2211,27 @@ class DirectPixiExecutionAdapter:
 
     def _parse_pyright_output(self, output: str) -> Dict[str, Any] | None:
         """Parse pyright text output; None when it has no diagnostics or summary."""
-        diagnostics, error_count = parse_pyright_text(output)
-        if not diagnostics and not PYRIGHT_SUMMARY_RE.search(output):
+        if not is_pyright_output(output):
             return None
-        errors = [
-            f"{path}:{line}:{col} - error: {message}"
-            for path, line, col, severity, message, _ in diagnostics
-            if severity == "error"
-        ]
-        return {"tool": "pyright", "type_errors": errors, "error_count": error_count}
+        diagnostics, error_count = parse_pyright_text(output)
+
+        def lines(severity: str) -> List[str]:
+            return [
+                f"{path}:{line}:{col} - {severity}: {message}"
+                for path, line, col, sev, message, _ in diagnostics
+                if sev == severity
+            ]
+
+        # error_count counts errors only: warnings/informations are reported
+        # but are not findings (as in execute_typecheck_assessment, where exit 0
+        # with only warnings is a SUCCESS).
+        return {
+            "tool": "pyright",
+            "type_errors": lines("error"),
+            "error_count": error_count,
+            "warnings": lines("warning"),
+            "informations": lines("information"),
+        }
 
     _BANDIT_MAX_ISSUES = 50
     _BANDIT_MAX_ERRORS = 20

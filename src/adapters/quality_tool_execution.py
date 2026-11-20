@@ -30,11 +30,16 @@ from adapters.direct_pixi_execution import (
     TOOL_TASK_ALIASES,
     detect_typechecker,
     is_execution_failure,
+    is_pyright_output,
     parse_pyright_text,
+    typechecker_executable,
 )
 
 
 _TASK_PATH_TOKENS = {"src", "src/", "tests", "tests/"}
+
+# Value options whose value is optional: only an integer next token is a value.
+_OPTIONAL_INT_OPTIONS = frozenset({"--threads"})
 
 # Options that consume the next token as their value, per tool. Anything else
 # starting with "-" (including bandit's -r) is a flag; a path after it is
@@ -78,6 +83,23 @@ _VALUE_OPTIONS: Dict[str, frozenset[str]] = {
             "--html-report",
             "--txt-report",
             "--linecount-report",
+        }
+    ),
+    # pyright/basedpyright: values of these options are never target paths.
+    "pyright": frozenset(
+        {
+            "-p",
+            "--project",
+            "-v",
+            "--venvpath",
+            "-t",
+            "--typeshedpath",
+            "--pythonpath",
+            "--pythonplatform",
+            "--pythonversion",
+            "--level",
+            "--threads",
+            "--verifytypes",
         }
     ),
     "bandit": frozenset(
@@ -201,12 +223,14 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         swapped: List[str] = []
         placed = False
         takes_value = False
-        for token in tokens:
+        for idx, token in enumerate(tokens):
             if takes_value:
                 takes_value = False
                 swapped.append(token)
             elif token.startswith("-") and token != "-":
                 takes_value = token in value_opts
+                if token in _OPTIONAL_INT_OPTIONS:
+                    takes_value = idx + 1 < len(tokens) and tokens[idx + 1].isdigit()
                 swapped.append(token)
             elif token in _TASK_PATH_TOKENS or (base / token).is_dir():
                 if not placed:
@@ -260,8 +284,8 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
             return result
         # basedpyright bodies are pyright bodies, but must run as basedpyright.
         executable = tool.value
-        if tool == QualityTool.PYRIGHT and "basedpyright" in str(body):
-            executable = "basedpyright"
+        if tool == QualityTool.PYRIGHT:
+            executable = typechecker_executable(body) or executable
         result = dict(
             executor.run_task(
                 executable,
@@ -609,6 +633,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                     else ExecutionStatus.WARNING
                 )
             else:
+                recognized = False
                 if not self._is_execution_failure(result):
                     # mypy/pyright exit non-zero when they find type errors;
                     # parse both streams.
@@ -616,8 +641,13 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                         result.get("stdout", "") + "\n" + result.get("stderr", "")
                     )
                     violations, type_errors = parse_output(combined, target_path)
+                    # pyright exits 1 for any diagnostics: a summary line alone
+                    # (e.g. `--warnings` with 0 errors) is findings too.
+                    recognized = tool == QualityTool.PYRIGHT and is_pyright_output(
+                        combined
+                    )
 
-                if not violations and not type_errors:
+                if not violations and not type_errors and not recognized:
                     return self._create_error_result(
                         tool=tool,
                         assessment_type=QualityAssessmentType.TYPECHECK,
@@ -674,7 +704,9 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 parsed_metrics=metrics,
                 violations=violations,
                 recommendations=env_notes
-                + self._generate_typecheck_recommendations(violations, type_errors),
+                + self._generate_typecheck_recommendations(
+                    violations, type_errors, tool
+                ),
                 auto_fix_available=False,  # mypy doesn't support auto-fixing
                 fix_commands=[],
             )
@@ -1758,7 +1790,10 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
         return recommendations
 
     def _generate_typecheck_recommendations(
-        self, violations: List[QualityViolation], type_errors: int
+        self,
+        violations: List[QualityViolation],
+        type_errors: int,
+        tool: QualityTool = QualityTool.MYPY,
     ) -> List[str]:
         """Generate recommendations based on type checking results."""
         recommendations = []
@@ -1792,9 +1827,15 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 "🏷️ Consider adding more type annotations for better static analysis"
             )
 
-        recommendations.append(
-            "⚙️ Enable strict mode gradually with mypy --strict for maximum type safety"
-        )
+        if tool == QualityTool.PYRIGHT:
+            recommendations.append(
+                "⚙️ Raise typeCheckingMode gradually (pyrightconfig.json or "
+                "[tool.pyright] in pyproject.toml) for maximum type safety"
+            )
+        else:
+            recommendations.append(
+                "⚙️ Enable strict mode gradually with mypy --strict for maximum type safety"
+            )
 
         return recommendations
 

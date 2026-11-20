@@ -10,6 +10,7 @@ project is used, with a diagnostic listing every candidate tried when none
 resolve.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -187,6 +188,25 @@ class TestPyrightTypecheck:
         assert result.violations[0].line_number == 12
         assert result.violations[0].rule_code == "reportFooBar"
 
+    @pytest.mark.parametrize(
+        "stdout",
+        [
+            "0 errors, 0 warnings, 0 informations \n",
+            "  /abs/a.py:3:1 - warning: Unused (reportUnusedImport)\n"
+            "0 errors, 1 warning, 0 informations \n",
+        ],
+    )
+    def test_exit_1_with_summary_or_warnings_only_is_findings(self, stdout):
+        result, _ = _typecheck("pyright --warnings src/", _run(1, stdout))
+
+        assert result.status == ExecutionStatus.WARNING
+        assert result.parsed_metrics.type_errors == 0
+
+    def test_exit_1_with_unrecognised_output_is_an_error(self):
+        result, _ = _typecheck("pyright src/", _run(1, "Traceback: boom\n"))
+
+        assert result.status == ExecutionStatus.ERROR
+
     def test_clean_exit_0_passes(self):
         result, _ = _typecheck("pyright src/", _run(0, PYRIGHT_CLEAN))
         assert result.status == ExecutionStatus.SUCCESS
@@ -235,10 +255,85 @@ class TestPyrightMultiLineDiagnostic:
         assert len(diagnostics) == 2
         _, _, _, severity, message, rule = diagnostics[0]
         assert (severity, rule) == ("error", "reportArgumentType")
-        assert "Argument of type X is wrong" in message
-        assert '"X" is not assignable to "Y"' in message
-        assert "reportArgumentType" not in message
+        assert message == 'Argument of type X is wrong\n"X" is not assignable to "Y"'
         assert diagnostics[1][5] == "reportUnusedImport"
+
+
+PYRIGHT_JSON = json.dumps(
+    {
+        "version": "1.1.0",
+        "generalDiagnostics": [
+            {
+                "file": "/abs/a.py",
+                "severity": "error",
+                "message": "bad",
+                "range": {
+                    "start": {"line": 11, "character": 4},
+                    "end": {"line": 11, "character": 9},
+                },
+                "rule": "reportFooBar",
+            },
+            {
+                "file": "/abs/b.py",
+                "severity": "warning",
+                "message": "meh",
+                "range": {
+                    "start": {"line": 2, "character": 0},
+                    "end": {"line": 2, "character": 1},
+                },
+            },
+        ],
+        "summary": {"errorCount": 1, "warningCount": 1, "informationCount": 0},
+    }
+)
+PYRIGHT_JSON_SUMMARY_ONLY = json.dumps(
+    {
+        "generalDiagnostics": [],
+        "summary": {"errorCount": 2, "warningCount": 0, "informationCount": 0},
+    }
+)
+
+
+class TestPyrightJsonOutput:
+    def test_parse_uses_one_based_lines_and_summary(self):
+        from adapters.direct_pixi_execution import parse_pyright_text
+
+        diagnostics, error_count = parse_pyright_text(PYRIGHT_JSON)
+
+        assert error_count == 1
+        assert diagnostics[0] == ("/abs/a.py", 12, 5, "error", "bad", "reportFooBar")
+        assert diagnostics[1][:4] == ("/abs/b.py", 3, 1, "warning")
+
+    def test_exit_1_with_json_errors_is_findings(self):
+        result, _ = _typecheck("pyright --outputjson src/", _run(1, PYRIGHT_JSON))
+
+        assert result.status == ExecutionStatus.WARNING
+        assert result.parsed_metrics.type_errors == 1
+        assert result.violations[0].line_number == 12
+
+    def test_exit_1_with_summary_only_json_is_findings(self):
+        result, _ = _typecheck(
+            "pyright --outputjson src/", _run(1, PYRIGHT_JSON_SUMMARY_ONLY)
+        )
+
+        assert result.status == ExecutionStatus.WARNING
+        assert result.parsed_metrics.type_errors == 2
+
+
+class TestTypecheckRecommendations:
+    def test_pyright_findings_get_pyright_advice(self):
+        result, _ = _typecheck("pyright src/", _run(1, PYRIGHT_FINDINGS))
+        advice = " ".join(result.recommendations)
+
+        assert "typeCheckingMode" in advice
+        assert "mypy --strict" not in advice
+
+    def test_mypy_findings_keep_mypy_advice(self):
+        result, _ = _typecheck(
+            "mypy src/", _run(1, "src/a.py:3:1: error: bad type  [assignment]\n")
+        )
+
+        assert "mypy --strict" in " ".join(result.recommendations)
 
 
 class TestDetectTypechecker:
@@ -252,6 +347,12 @@ class TestDetectTypechecker:
             ("mypy src/", "mypy"),
             ("python -m mypy src", "mypy"),
             ("uv run mypy src", "mypy"),
+            ("env FOO=1 pyright src/", "pyright"),
+            ("env -i FOO=1 BAR=2 mypy src", "mypy"),
+            ("env -u FOO basedpyright", "pyright"),
+            ("FOO=1 BAR=2 pyright src/", "pyright"),
+            ("FOO=1 env BAR=2 mypy src", "mypy"),
+            ("env FOO=1 flake8 src/", None),
             ("flake8 src/", None),
             ("echo 'a b", None),
             ("", None),

@@ -1064,7 +1064,7 @@ class QualityOrchestrationService:
                         fix_mode=False,
                         **path_kwargs,
                     )
-                elif tool == QualityTool.MYPY:
+                elif tool in (QualityTool.MYPY, QualityTool.PYRIGHT):
                     future = self._executor.submit(
                         self.quality_executor.execute_typecheck_assessment,
                         tool=tool,
@@ -1140,7 +1140,7 @@ class QualityOrchestrationService:
                     result = self.quality_executor.execute_lint_assessment(
                         tool=tool, target_path="src/", fix_mode=False, **path_kwargs
                     )
-                elif tool == QualityTool.MYPY:
+                elif tool in (QualityTool.MYPY, QualityTool.PYRIGHT):
                     result = self.quality_executor.execute_typecheck_assessment(
                         tool=tool, strict_mode=False, **path_kwargs
                     )

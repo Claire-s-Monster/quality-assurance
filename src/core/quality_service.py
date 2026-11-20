@@ -392,7 +392,7 @@ class QualityAssuranceService:
                         QualityTool.FLAKE8,
                     ]:
                         result = self.execute_lint_assessment(tool=tool)
-                    elif tool == QualityTool.MYPY:
+                    elif tool in (QualityTool.MYPY, QualityTool.PYRIGHT):
                         result = self.execute_typecheck_assessment(tool=tool)
                     elif tool == QualityTool.BANDIT:
                         result = self.execute_security_scan(tool=tool)

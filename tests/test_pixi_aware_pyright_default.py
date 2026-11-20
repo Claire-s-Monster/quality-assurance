@@ -53,7 +53,7 @@ def _assess(monkeypatch, adapter, tools, code, stdout):
     monkeypatch.setattr(server, "container", _Container(adapter))
 
     def fake_run(argv, **kwargs):
-        is_typecheck = "typecheck" in argv
+        is_typecheck = "pyright" in argv or "typecheck" in argv
         return Mock(
             returncode=code if is_typecheck else 0,
             stdout=stdout if is_typecheck else "[]",
@@ -66,7 +66,11 @@ def _assess(monkeypatch, adapter, tools, code, stdout):
         result = server.quality_execute_pixi_aware_assessment.fn(
             tools=tools, project_path="/tmp"
         )
-    typecheck_runs = [c for c in mock_run.call_args_list if "typecheck" in c[0][0]]
+    typecheck_runs = [
+        c
+        for c in mock_run.call_args_list
+        if "pyright" in c[0][0] or "typecheck" in c[0][0]
+    ]
     return result, typecheck_runs
 
 
@@ -95,7 +99,7 @@ class TestDefaultMypyOnPyrightProject:
         assert len(runs) == 1
         assert "--output" not in runs[0][0][0]
         pyright_result = result["assessment_results"][1]
-        assert pyright_result["task_body_mode"] == "task_as_defined"
+        assert pyright_result["task_body_mode"] == "direct_tool"
         assert "not applied" in pyright_result["task_args_note"]
 
     def test_other_tools_are_never_deduplicated(self):
