@@ -115,6 +115,58 @@ class TestMypyRecommendationWhenTypeCheckCovered:
         assert "mypy" not in env.missing_tools
         assert not any("mypy" in r for r in env.recommendations)
 
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "pyright --version",
+            "pyright --help",
+            "basedpyright -h",
+            "basedpyright --version",
+            "cd src && echo pyright",
+            "echo pyright; ls",
+            'pyright "src/',
+        ],
+    )
+    def test_non_checking_bodies_do_not_cover_mypy(self, body):
+        env = _detected_env({"typecheck": body, "lint": "ruff check ."})
+        assert "mypy" in env.missing_tools
+        assert any(
+            "Install essential tools" in r and "mypy" in r for r in env.recommendations
+        )
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "cd src && pyright",
+            "cd src && pyright src/ | tee out.txt",
+            "bash -c 'pyright src/'",
+            "sh -c 'cd src && basedpyright'",
+            ["cd", "src", "&&", "pyright"],
+            "bash -lc 'pyright src/'",
+            "echo x & pyright",
+        ],
+    )
+    def test_shell_wrapped_pyright_covers_mypy(self, body):
+        env = _detected_env({"typecheck": body, "lint": "ruff check ."})
+        assert "mypy" not in env.missing_tools
+        assert not any(
+            "Install essential tools" in r and "mypy" in r for r in env.recommendations
+        )
+
+    def test_unresolvable_pyright_gets_actionable_recommendation(self):
+        env = _detected_env(self.PYRIGHT_TASKS)
+        assert any("pixi add pyright" in r for r in env.recommendations)
+        assert not any("mypy" in r for r in env.recommendations)
+
+    def test_resolvable_pyright_gets_no_install_recommendation(self):
+        adapter = DirectPixiExecutionAdapter(logging=Mock(), working_dir="/tmp/project")
+        adapter._is_pixi_project = Mock(return_value=True)
+        adapter._get_available_tasks = Mock(return_value=self.PYRIGHT_TASKS)
+        adapter._get_tool_version = Mock(return_value="pyright 1.1.400")
+        adapter.environments_providing_tool = Mock(return_value=[])
+        env = adapter.detect_quality_environment("/tmp/project")
+        assert not any("pixi add pyright" in r for r in env.recommendations)
+
     def test_no_type_checker_still_told_to_install_mypy(self):
         env = _detected_env({"lint": "ruff check ."})
         assert any(
@@ -142,24 +194,31 @@ class TestOptimizeEnvironmentMypySuggestion:
         adapter._get_available_tasks = Mock(return_value=tasks)
         adapter._get_tool_version = Mock(return_value=None)
         adapter.environments_providing_tool = Mock(return_value=[])
-        adapter.optimize_quality_environment = Mock(return_value={})
+        adapter._optimize_tool_environment = Mock(return_value=[])
+        adapter._apply_global_optimizations = Mock(return_value={})
         monkeypatch.setattr(server, "orchestration_service", object())
         monkeypatch.setattr(server, "container", _Container(adapter))
         return server.quality_optimize_pixi_environment.fn(
             working_dir="/tmp/project",
             target_tools=["ruff", "mypy"],
             generate_tasks=False,
-        )["missing_tools_analysis"]
+        )
 
     def test_pyright_only_project_gets_no_mypy_install(self, monkeypatch):
-        analysis = self._optimize(
+        result = self._optimize(
             monkeypatch, {"typecheck": "pyright src/", "lint": "ruff check ."}
         )
+        analysis = result["missing_tools_analysis"]
         assert "mypy" not in analysis["missing_tools"]
         assert not any(a["tool"] == "mypy" for a in analysis["recommended_additions"])
+        assert result["optimization_summary"]["tools_missing"] == 0
+        assert "mypy" not in str(result["optimization_results"])
+        assert not any("mypy" in r for r in result["recommendations"])
 
     def test_no_type_checker_still_gets_mypy_install(self, monkeypatch):
-        analysis = self._optimize(monkeypatch, {"lint": "ruff check ."})
+        result = self._optimize(monkeypatch, {"lint": "ruff check ."})
+        analysis = result["missing_tools_analysis"]
+        assert "pixi add mypy" in str(result["optimization_results"])
         assert "mypy" in analysis["missing_tools"]
         assert any(
             a["tool"] == "mypy" and a["install_command"] == "pixi add mypy"

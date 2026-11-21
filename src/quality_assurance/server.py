@@ -2455,9 +2455,23 @@ def quality_optimize_pixi_environment(
         if target_tools is None:
             target_tools = ["ruff", "mypy", "bandit", "pytest", "radon", "vulture"]
 
+        task_bodies = list(
+            pixi_adapter._get_available_tasks(
+                working_dir or pixi_adapter.working_dir
+            ).values()
+        )
+        uncovered = without_covered_typechecker(
+            set(target_tools) - env_info.available_tools, task_bodies
+        )
+
         # Optimize environment
         optimization_result = pixi_adapter.optimize_quality_environment(
-            required_tools=target_tools, working_dir=working_dir
+            required_tools=[
+                t
+                for t in target_tools
+                if t in env_info.available_tools or t in uncovered
+            ],
+            working_dir=working_dir,
         )
 
         # Generate task templates if requested
@@ -2476,12 +2490,7 @@ def quality_optimize_pixi_environment(
                         )
 
         # Analyze missing tools
-        missing_tools = without_covered_typechecker(
-            set(target_tools) - env_info.available_tools,
-            pixi_adapter._get_available_tasks(
-                working_dir or pixi_adapter.working_dir
-            ).values(),
-        )
+        missing_tools = uncovered
         recommended_additions = []
         for tool in missing_tools:
             recommended_additions.append(
