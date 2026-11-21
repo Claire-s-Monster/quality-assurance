@@ -21,7 +21,7 @@ import subprocess
 import tempfile
 import time
 from collections import deque
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, Iterable, List, Optional, Set
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -249,6 +249,15 @@ def detect_typechecker(body: Any) -> Optional[str]:
     """
     executable = typechecker_executable(body)
     return _TYPECHECKERS[executable] if executable else None
+
+
+def without_covered_typechecker(
+    missing: Set[str], task_bodies: Iterable[Any]
+) -> Set[str]:
+    """`missing` minus mypy when some task body actually runs pyright."""
+    if any(detect_typechecker(body) == "pyright" for body in task_bodies):
+        return missing - {"mypy"}
+    return missing
 
 
 _RUFF_NON_CHECK_COMMANDS = frozenset(
@@ -1250,6 +1259,10 @@ class DirectPixiExecutionAdapter:
                 for tool in self._CORE_QUALITY_TOOLS & missing_tools
                 if self.environments_providing_tool(tool, working_dir)
             }
+
+            missing_tools = without_covered_typechecker(
+                missing_tools, available_tasks.values()
+            )
 
             # Assess environment health
             health = self._assess_environment_health(

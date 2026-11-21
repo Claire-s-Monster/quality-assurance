@@ -74,6 +74,99 @@ def _assess(monkeypatch, adapter, tools, code, stdout):
     return result, typecheck_runs
 
 
+def _detected_env(tasks):
+    adapter = DirectPixiExecutionAdapter(logging=Mock(), working_dir="/tmp/project")
+    adapter._is_pixi_project = Mock(return_value=True)
+    adapter._get_available_tasks = Mock(return_value=tasks)
+    adapter._get_tool_version = Mock(return_value=None)
+    adapter.environments_providing_tool = Mock(return_value=[])
+    return adapter.detect_quality_environment("/tmp/project")
+
+
+class TestMypyRecommendationWhenTypeCheckCovered:
+    PYRIGHT_TASKS = {"typecheck": "pyright src/", "lint": "ruff check ."}
+
+    def test_pyright_only_project_not_told_to_install_mypy(self):
+        env = _detected_env(self.PYRIGHT_TASKS)
+        assert not any("mypy" in r for r in env.recommendations)
+        assert "mypy" not in env.missing_tools
+        assert "mypy" not in env.available_tools
+        assert "pyright" in env.available_tools
+
+    def test_body_only_mentioning_pyright_does_not_suppress_mypy(self):
+        env = _detected_env(
+            {"note": "echo see pyrightconfig.json", "lint": "ruff check ."}
+        )
+        assert "mypy" in env.missing_tools
+        assert any(
+            "Install essential tools" in r and "mypy" in r for r in env.recommendations
+        )
+
+    def test_basedpyright_body_suppresses_mypy(self):
+        env = _detected_env({"typecheck": "basedpyright src/", "lint": "ruff check ."})
+        assert "mypy" not in env.missing_tools
+        assert not any("mypy" in r for r in env.recommendations)
+
+    def test_mypy_and_pyright_tasks_both_present(self):
+        env = _detected_env(
+            {"typecheck": "mypy src/", "typecheck-pyright": "pyright src/"}
+        )
+        assert "mypy" in env.available_tools
+        assert "mypy" not in env.missing_tools
+        assert not any("mypy" in r for r in env.recommendations)
+
+    def test_no_type_checker_still_told_to_install_mypy(self):
+        env = _detected_env({"lint": "ruff check ."})
+        assert any(
+            "Install essential tools" in r and "mypy" in r for r in env.recommendations
+        )
+        assert "mypy" in env.missing_tools
+
+    def test_mypy_project_unchanged(self):
+        env = _detected_env({"typecheck": "mypy src/", "lint": "ruff check ."})
+        assert "mypy" in env.available_tools
+        assert not any("mypy" in r for r in env.recommendations)
+        assert any(
+            "Install essential tools" in r and "bandit" in r
+            for r in env.recommendations
+        )
+
+
+class TestOptimizeEnvironmentMypySuggestion:
+    @staticmethod
+    def _optimize(monkeypatch, tasks):
+        from quality_assurance import server
+
+        adapter = DirectPixiExecutionAdapter(logging=Mock(), working_dir="/tmp/project")
+        adapter._is_pixi_project = Mock(return_value=True)
+        adapter._get_available_tasks = Mock(return_value=tasks)
+        adapter._get_tool_version = Mock(return_value=None)
+        adapter.environments_providing_tool = Mock(return_value=[])
+        adapter.optimize_quality_environment = Mock(return_value={})
+        monkeypatch.setattr(server, "orchestration_service", object())
+        monkeypatch.setattr(server, "container", _Container(adapter))
+        return server.quality_optimize_pixi_environment.fn(
+            working_dir="/tmp/project",
+            target_tools=["ruff", "mypy"],
+            generate_tasks=False,
+        )["missing_tools_analysis"]
+
+    def test_pyright_only_project_gets_no_mypy_install(self, monkeypatch):
+        analysis = self._optimize(
+            monkeypatch, {"typecheck": "pyright src/", "lint": "ruff check ."}
+        )
+        assert "mypy" not in analysis["missing_tools"]
+        assert not any(a["tool"] == "mypy" for a in analysis["recommended_additions"])
+
+    def test_no_type_checker_still_gets_mypy_install(self, monkeypatch):
+        analysis = self._optimize(monkeypatch, {"lint": "ruff check ."})
+        assert "mypy" in analysis["missing_tools"]
+        assert any(
+            a["tool"] == "mypy" and a["install_command"] == "pixi add mypy"
+            for a in analysis["recommended_additions"]
+        )
+
+
 class TestDefaultMypyOnPyrightProject:
     @pytest.mark.parametrize(
         "code,stdout,verdict,reason",
