@@ -304,6 +304,16 @@ class TestPyrightJsonOutput:
         assert diagnostics[0] == ("/abs/a.py", 12, 5, "error", "bad", "reportFooBar")
         assert diagnostics[1][:4] == ("/abs/b.py", 3, 1, "warning")
 
+    def test_json_after_a_log_prefix_containing_braces(self):
+        from adapters.direct_pixi_execution import parse_pyright_text
+
+        output = 'starting {cfg} and {"x": 1}\n' + PYRIGHT_JSON
+
+        diagnostics, error_count = parse_pyright_text(output)
+
+        assert error_count == 1
+        assert diagnostics[0][:2] == ("/abs/a.py", 12)
+
     def test_exit_1_with_json_errors_is_findings(self):
         result, _ = _typecheck("pyright --outputjson src/", _run(1, PYRIGHT_JSON))
 

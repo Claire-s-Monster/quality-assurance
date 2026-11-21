@@ -99,7 +99,8 @@ def test_pyright_option_value_naming_basedpyright_stays_pyright(root):
 
 
 @pytest.mark.parametrize(
-    "option", ["-p", "--project", "--venvpath", "--typeshedpath", "-t"]
+    "option",
+    ["-p", "--project", "--venvpath", "--typeshedpath", "-t", "--baselinefile"],
 )
 def test_pyright_option_values_are_not_swapped_as_paths(root, option):
     _, args, _ = _typecheck(root, f"pyright {option} lib src/", ["pkg/"])
@@ -111,6 +112,20 @@ def test_pyright_threads_without_a_number_does_not_swallow_the_path(root):
     _, args, _ = _typecheck(root, "pyright --threads src/", ["pkg/"])
 
     assert args == ["--threads", "pkg/"]
+
+
+def test_threads_optional_value_rule_is_limited_to_pyright(monkeypatch):
+    from adapters import quality_tool_execution as module
+
+    monkeypatch.setitem(module._VALUE_OPTIONS, "custom", frozenset({"--threads"}))
+
+    # For another tool --threads keeps its plain value-option handling.
+    assert (
+        QualityToolExecutionAdapter._swap_path_tokens(
+            ["--threads", "src/"], ["pkg/"], "custom", None
+        )
+        is None
+    )
 
 
 def test_pyright_threads_with_a_number_keeps_it(root):

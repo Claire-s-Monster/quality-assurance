@@ -242,6 +242,35 @@ class TestPyrightBodyRunsAsDefined:
         ]
         assert result["task_body_mode"] == "direct_tool"
         assert "not applied" in result["task_args_note"]
+        assert "depends-on tasks do not run" in result["task_args_note"]
+
+    @pytest.mark.parametrize(
+        "body,tail",
+        [
+            ("uv run pyright src/", ["uv", "run", "pyright", "src/"]),
+            ("python -m pyright src/", ["python", "-m", "pyright", "src/"]),
+            ("uv run -e x pyright src/", ["uv", "run", "-e", "x", "pyright", "src/"]),
+        ],
+    )
+    def test_runner_prefixed_body_runs_its_exact_argv_without_depends_on(
+        self, body, tail
+    ):
+        result, argv = self._assess("pyright", 0, PYRIGHT_TEXT, body=body)
+
+        assert argv[1:] == ["run", "--environment", "quality", *tail]
+        assert "typecheck" not in argv
+        assert result["task_body_mode"] == "direct_tool"
+        assert "depends-on tasks do not run" in result["task_args_note"]
+
+    @pytest.mark.parametrize(
+        "body", ["env FOO=1 pyright src/", "FOO=1 pyright src/", "env -i A=1 pyright"]
+    )
+    def test_env_prefixed_body_runs_the_task_and_says_depends_on_may_run(self, body):
+        result, argv = self._assess("pyright", 0, PYRIGHT_TEXT, body=body)
+
+        assert argv[-1] == "typecheck"
+        assert result["task_body_mode"] == "task_as_defined"
+        assert "depends-on tasks may run" in result["task_args_note"]
 
     def test_basedpyright_body_runs_as_basedpyright(self):
         _, argv = self._assess(

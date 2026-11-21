@@ -13,7 +13,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from adapters.quality_analysis import QualityAnalysisAdapter  # noqa: E402
-from core.models import QualitySuiteConfiguration, QualityTool  # noqa: E402
+from core.models import (  # noqa: E402
+    QualitySuiteConfiguration,
+    QualityTool,
+    ViolationSeverity,
+)
 from core.quality_service import QualityAssuranceService  # noqa: E402
 from core.quality_orchestration_service import (  # noqa: E402
     QualityOrchestrationService,
@@ -24,7 +28,8 @@ PYRIGHT_OUTPUT = (
     "  /abs/src/a.py:12:5 - error: Message text (reportFooBar)\n"
     "  /abs/src/a.py:20:1 - error: Other (reportUndefinedVariable)\n"
     "  /abs/src/b.py:3:1 - warning: Unused (reportUnusedImport)\n"
-    "2 errors, 1 warning, 0 informations \n"
+    "  /abs/src/c.py:7:1 - information: Note (reportNote)\n"
+    "2 errors, 1 warning, 1 information \n"
 )
 
 
@@ -76,7 +81,13 @@ class TestQualityAnalysisPyright:
             QualityTool.PYRIGHT, PYRIGHT_OUTPUT, 1
         )
 
-        assert len(result.violations) == 3
+        assert len(result.violations) == 4
+        assert [v.severity.value for v in result.violations] == [
+            ViolationSeverity.HIGH.value,
+            ViolationSeverity.HIGH.value,
+            ViolationSeverity.MEDIUM.value,
+            ViolationSeverity.INFO.value,
+        ]
         assert {v.tool for v in result.violations} == {QualityTool.PYRIGHT}
         assert result.violations[0].rule_code == "reportFooBar"
         assert result.violations[0].line_number == 12

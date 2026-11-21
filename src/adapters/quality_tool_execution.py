@@ -38,7 +38,8 @@ from adapters.direct_pixi_execution import (
 
 _TASK_PATH_TOKENS = {"src", "src/", "tests", "tests/"}
 
-# Value options whose value is optional: only an integer next token is a value.
+# pyright/basedpyright value options whose value is optional: only an integer
+# next token is a value.
 _OPTIONAL_INT_OPTIONS = frozenset({"--threads"})
 
 # Options that consume the next token as their value, per tool. Anything else
@@ -100,6 +101,7 @@ _VALUE_OPTIONS: Dict[str, frozenset[str]] = {
             "--level",
             "--threads",
             "--verifytypes",
+            "--baselinefile",  # basedpyright
         }
     ),
     "bandit": frozenset(
@@ -229,7 +231,7 @@ class QualityToolExecutionAdapter(QualityToolExecutionPort):
                 swapped.append(token)
             elif token.startswith("-") and token != "-":
                 takes_value = token in value_opts
-                if token in _OPTIONAL_INT_OPTIONS:
+                if tool == "pyright" and token in _OPTIONAL_INT_OPTIONS:
                     takes_value = idx + 1 < len(tokens) and tokens[idx + 1].isdigit()
                 swapped.append(token)
             elif token in _TASK_PATH_TOKENS or (base / token).is_dir():

@@ -91,15 +91,16 @@ PyrightDiagnostic = tuple[str, int, int, str, str, Optional[str]]
 
 def _pyright_json(output: str) -> Optional[Dict[str, Any]]:
     """The `pyright --outputjson` report in `output`, or None."""
+    decoder = json.JSONDecoder()
     start = output.find("{")
-    if start < 0:
-        return None
-    try:
-        data, _ = json.JSONDecoder().raw_decode(output[start:])
-    except json.JSONDecodeError:
-        return None
-    if isinstance(data, dict) and "generalDiagnostics" in data:
-        return data
+    while start >= 0:
+        try:
+            data, _ = decoder.raw_decode(output, start)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict) and "generalDiagnostics" in data:
+            return data
+        start = output.find("{", start + 1)
     return None
 
 
@@ -190,7 +191,38 @@ def typechecker_executable(body: Any) -> Optional[str]:
         tokens = [str(t) for t in body]
     else:
         return None
+    i, _ = _command_start(tokens)
+    name = Path(tokens[i]).name if i < len(tokens) else None
+    return name if name in _TYPECHECKERS else None
+
+
+def _strip_pixi_run(
+    tokens: List[str],
+) -> tuple[Optional[str], Optional[List[str]], Optional[str]]:
+    """(pixi env from `-e`, argv after any `pixi run [-e X]`, reason).
+
+    argv is None, with a reason, for an unsupported `pixi run` flag.
+    """
+    env: Optional[str] = None
+    if tokens[:2] == ["pixi", "run"]:
+        i = 2
+        while i < len(tokens) and tokens[i].startswith("-"):
+            flag = tokens[i]
+            if flag in ("-e", "--environment") and i + 1 < len(tokens):
+                env, i = tokens[i + 1], i + 2
+            elif flag.startswith("--environment="):
+                env, i = flag.split("=", 1)[1], i + 1
+            else:
+                return None, None, f"unsupported pixi run flag {flag!r}"
+        tokens = tokens[i:]
+    return env, tokens, None
+
+
+def _command_start(tokens: List[str]) -> tuple[int, bool]:
+    """Index of the first real command token, and whether `env`/`NAME=value`
+    prefixes (which a direct run cannot carry) were skipped on the way."""
     i = 0
+    env_prefixed = False
     while i < len(tokens):
         if tokens[i : i + 2] in (["pixi", "run"], ["uv", "run"]):
             i += 2
@@ -199,15 +231,14 @@ def typechecker_executable(body: Any) -> Optional[str]:
         elif tokens[i : i + 2] in (["python", "-m"], ["python3", "-m"]):
             i += 2
         elif tokens[i] == "env":
-            i += 1
+            i, env_prefixed = i + 1, True
             while i < len(tokens) and tokens[i].startswith("-"):
                 i += 2 if tokens[i] in ("-u", "--unset", "-C", "--chdir") else 1
         elif _ENV_ASSIGNMENT_RE.match(tokens[i]):
-            i += 1
+            i, env_prefixed = i + 1, True
         else:
             break
-    name = Path(tokens[i]).name if i < len(tokens) else None
-    return name if name in _TYPECHECKERS else None
+    return i, env_prefixed
 
 
 def detect_typechecker(body: Any) -> Optional[str]:
@@ -1715,9 +1746,11 @@ class DirectPixiExecutionAdapter:
     ) -> tuple[Dict[str, Any], str, str]:
         """Run a pyright task without any builder args.
 
-        A non-bare body that is a single invocation runs as its own argv (so
-        the task's `depends-on` tasks do not run), like other non-bare bodies.
-        A bare body, or one that cannot be parsed, runs the task as defined.
+        A non-bare body that is a single invocation (optionally behind `pixi
+        run`, `uv run` or `python -m`) runs as its own argv, prefix included
+        and unrewritten, so the task's `depends-on` tasks do not run. A bare body, or one that cannot be run
+        directly (e.g. `env FOO=1 pyright`, `FOO=1 pyright`), runs the task by
+        name, and then its `depends-on` tasks may run too.
         Returns (result, task_body_mode, task_args_note).
         """
         executable = typechecker_executable(body)
@@ -1727,7 +1760,10 @@ class DirectPixiExecutionAdapter:
             and not self._is_bare_tool_body(body, executable)
         ):
             _, args, _ = self._parse_task_body_args(body, "pyright")
-            if args is not None:
+            # The prefix scanner only detects and locates arguments; what runs
+            # is the body's own argv (`uv run`/`python -m` prefix included).
+            _, command, _ = self._body_command(body)
+            if args is not None and command:
                 result = self._run_tool_directly(
                     task_name,
                     "pyright",
@@ -1738,12 +1774,13 @@ class DirectPixiExecutionAdapter:
                     working_dir,
                     environment,
                     executable=executable,
+                    command=command,
                 )
                 return (
                     result,
                     "direct_tool",
                     "pyright body run as its own command; target_paths and "
-                    "quality_config were not applied",
+                    "quality_config were not applied; depends-on tasks do not run",
                 )
         result = self.run_task(
             task_name=task_name,
@@ -1755,8 +1792,8 @@ class DirectPixiExecutionAdapter:
         return (
             result,
             "task_as_defined",
-            "pyright task run as defined; target_paths and quality_config "
-            "were not applied",
+            "pyright task run by name as defined; target_paths and "
+            "quality_config were not applied; depends-on tasks may run",
         )
 
     def _run_tool_directly(
@@ -1771,6 +1808,7 @@ class DirectPixiExecutionAdapter:
         environment: str | None,
         output_file: str | None = None,
         executable: str | None = None,
+        command: List[str] | None = None,
     ) -> Dict[str, Any]:
         """Run the tool itself for an alias task whose body is a full command.
 
@@ -1778,8 +1816,12 @@ class DirectPixiExecutionAdapter:
         builders would add), falling back to the builder args when the body
         cannot be parsed safely. The environment is the caller's, else the
         body's `-e`, else one that declares the tool, else the usual choice.
+        `command`, when given, is the exact argv to run (e.g. with a `uv run`
+        prefix) instead of the tool plus its parsed arguments.
         """
         body_env, task_args, reason = self._parse_task_body_args(body, quality_tool)
+        if command is not None and task_args is not None:
+            task_args = command[1:]
         if task_args is None:
             args = builder_args
             args_info = {
@@ -1823,7 +1865,7 @@ class DirectPixiExecutionAdapter:
             )
 
         result = self.run_task(
-            task_name=executable or quality_tool,
+            task_name=command[0] if command else (executable or quality_tool),
             args=args,
             timeout=timeout,
             working_dir=working_dir,
@@ -1853,6 +1895,19 @@ class DirectPixiExecutionAdapter:
                 return None, f"task body uses shell expansion in {token!r}"
         return tokens, None
 
+    def _body_command(
+        self, body: str | List[str]
+    ) -> tuple[Optional[str], Optional[List[str]], Optional[str]]:
+        """(pixi env from `-e`, argv after any `pixi run [-e X]`, reason).
+
+        argv is None, with a reason, when the body uses shell syntax or an
+        unsupported `pixi run` flag.
+        """
+        tokens, reason = self._split_task_body(body)
+        if tokens is None:
+            return None, None, reason
+        return _strip_pixi_run(tokens)
+
     def _parse_task_body_args(
         self, body: str | List[str], tool: str
     ) -> tuple[Optional[str], Optional[List[str]], Optional[str]]:
@@ -1864,19 +1919,21 @@ class DirectPixiExecutionAdapter:
         tokens, reason = self._split_task_body(body)
         if tokens is None:
             return None, None, reason
+        env, tokens, reason = _strip_pixi_run(tokens)
+        if tokens is None:
+            return None, None, reason
 
-        env: Optional[str] = None
-        if tokens[:2] == ["pixi", "run"]:
-            i = 2
-            while i < len(tokens) and tokens[i].startswith("-"):
-                flag = tokens[i]
-                if flag in ("-e", "--environment") and i + 1 < len(tokens):
-                    env, i = tokens[i + 1], i + 2
-                elif flag.startswith("--environment="):
-                    env, i = flag.split("=", 1)[1], i + 1
-                else:
-                    return None, None, f"unsupported pixi run flag {flag!r}"
-            tokens = tokens[i:]
+        if tool == "pyright":
+            # Also unwrap `uv run` / `python -m`; env assignments cannot be
+            # carried by a direct run, so such bodies are not parsed.
+            start, env_prefixed = _command_start(tokens)
+            if env_prefixed:
+                return (
+                    None,
+                    None,
+                    "task body sets environment variables a direct run cannot carry",
+                )
+            tokens = tokens[start:]
 
         accepted = (tool, "basedpyright") if tool == "pyright" else (tool,)
         if not tokens or tokens[0] not in accepted:
