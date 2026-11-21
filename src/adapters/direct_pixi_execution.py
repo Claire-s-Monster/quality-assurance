@@ -26,6 +26,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from core.payload_bounds import bound_parsed_output
+from core.pixi_platform import current_pixi_platform, target_key_matches
 from core.ports import LoggingPort
 from core.subprocess_env import target_project_env
 
@@ -1061,8 +1062,15 @@ class DirectPixiExecutionAdapter:
         for name in self._resolve_environment_features(config, environment) or []:
             tables.append(features.get(name, {}) or {})
 
+        host = current_pixi_platform()
         for table in tables:
-            scopes = [table, *((table.get("target", {}) or {}).values())]
+            targets = table.get("target", {}) or {}
+            # Unknown host: stay permissive and count every target table.
+            scopes = [table] + [
+                scope
+                for key, scope in targets.items()
+                if host is None or target_key_matches(str(key), host)
+            ]
             for scope in scopes:
                 for key in ("dependencies", "pypi-dependencies"):
                     declared = (scope.get(key, {}) or {}).keys()
