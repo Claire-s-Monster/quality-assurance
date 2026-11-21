@@ -69,6 +69,71 @@ def _lint(root, body, paths):
     return ex.calls[0][1]
 
 
+def test_basedpyright_body_gets_paths_swapped_and_runs_basedpyright(root):
+    ex = Executor(root, {"typecheck": "basedpyright lib/ --level error"})
+    QualityToolExecutionAdapter(ex).execute_typecheck_assessment(
+        tool=QualityTool.PYRIGHT, target_paths=["pkg/"], project_path=str(root)
+    )
+    task_name, args, kwargs = ex.calls[0]
+
+    assert task_name == "basedpyright"
+    assert args == ["pkg/", "--level", "error"]
+    assert kwargs["as_command"] is True
+
+
+def _typecheck(root, body, paths):
+    ex = Executor(root, {"typecheck": body})
+    QualityToolExecutionAdapter(ex).execute_typecheck_assessment(
+        tool=QualityTool.PYRIGHT, target_paths=paths, project_path=str(root)
+    )
+    return ex.calls[0]
+
+
+def test_pyright_option_value_naming_basedpyright_stays_pyright(root):
+    task_name, args, _ = _typecheck(
+        root, "pyright --project basedpyright_cfg src/", ["pkg/"]
+    )
+
+    assert task_name == "pyright"
+    assert args == ["--project", "basedpyright_cfg", "pkg/"]
+
+
+@pytest.mark.parametrize(
+    "option",
+    ["-p", "--project", "--venvpath", "--typeshedpath", "-t", "--baselinefile"],
+)
+def test_pyright_option_values_are_not_swapped_as_paths(root, option):
+    _, args, _ = _typecheck(root, f"pyright {option} lib src/", ["pkg/"])
+
+    assert args == [option, "lib", "pkg/"]
+
+
+def test_pyright_threads_without_a_number_does_not_swallow_the_path(root):
+    _, args, _ = _typecheck(root, "pyright --threads src/", ["pkg/"])
+
+    assert args == ["--threads", "pkg/"]
+
+
+def test_threads_optional_value_rule_is_limited_to_pyright(monkeypatch):
+    from adapters import quality_tool_execution as module
+
+    monkeypatch.setitem(module._VALUE_OPTIONS, "custom", frozenset({"--threads"}))
+
+    # For another tool --threads keeps its plain value-option handling.
+    assert (
+        QualityToolExecutionAdapter._swap_path_tokens(
+            ["--threads", "src/"], ["pkg/"], "custom", None
+        )
+        is None
+    )
+
+
+def test_pyright_threads_with_a_number_keeps_it(root):
+    _, args, _ = _typecheck(root, "pyright --threads 4 src/", ["pkg/"])
+
+    assert args == ["--threads", "4", "pkg/"]
+
+
 def test_non_src_directory_is_swapped(root):
     args = _lint(root, "ruff check lib/ --select=F", ["pkg/"])
 

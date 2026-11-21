@@ -20,6 +20,7 @@ from pydantic import BaseModel
 # Add parent directory to path to access core modules
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+from adapters.direct_pixi_execution import detect_typechecker
 from core.container import Container
 from core.payload_bounds import bound_parsed_output
 from core.quality_orchestration_service import (
@@ -43,6 +44,8 @@ T = TypeVar("T")
 
 # Initialize FastMCP app
 app = FastMCP("Quality Assurance MCP Server")
+
+_TYPECHECK_TOOLS = (QualityTool.MYPY, QualityTool.PYRIGHT)
 
 # Global container and service instances
 container: Optional[Container] = None
@@ -446,7 +449,7 @@ def quality_execute_typecheck_assessment(
         except ValueError:
             return {
                 "error": f"Unsupported type checking tool: {tool}",
-                "supported_tools": [t.value for t in QualityTool if "mypy" in t.value],
+                "supported_tools": [t.value for t in _TYPECHECK_TOOLS],
                 "timestamp": datetime.now().isoformat(),
             }
 
@@ -2098,6 +2101,41 @@ def _describe_pixi_aware_failure(
     return f"{tool_name}: {str(detail)[:_RECOMMENDATION_DETAIL_CAP]}"
 
 
+def _resolve_pyright_typecheck_tools(
+    pixi_adapter: Any,
+    tools: List[str],
+    project_path: Optional[str],
+    environment: Optional[str],
+) -> Tuple[List[str], set[str]]:
+    """Rename mypy/pyright requests whose typecheck task runs pyright to "pyright".
+
+    Returns (tools, names backed by a pyright task). Only entries renamed this
+    way are deduplicated; every other tool passes through untouched.
+    Best-effort: an adapter that cannot report task bodies leaves tools as is.
+    """
+    resolved: List[str] = []
+    from_task: set[str] = set()
+    for tool in tools:
+        backed = False
+        if tool in ("mypy", "pyright"):
+            task, body = None, None
+            try:
+                task = pixi_adapter.resolve_task_name(
+                    tool, working_dir=project_path, environment=environment
+                )
+                body = pixi_adapter._get_available_tasks(
+                    project_path or pixi_adapter.working_dir, environment
+                ).get(task)
+            except (AttributeError, TypeError, OSError):
+                pass
+            if task and detect_typechecker(body) == "pyright":
+                tool, backed = "pyright", True
+                from_task.add(tool)
+        if not (backed and tool in resolved):
+            resolved.append(tool)
+    return resolved, from_task
+
+
 @app.tool()
 def quality_execute_pixi_aware_assessment(
     tools: Optional[List[str]] = None,
@@ -2178,6 +2216,12 @@ def quality_execute_pixi_aware_assessment(
         # Detect quality environment first (scoped to project_path when supplied)
         env_info = pixi_adapter.detect_quality_environment(working_dir=project_path)
 
+        # A typecheck task that runs pyright is the type checker, whichever of
+        # mypy/pyright was requested; both requests then name the same run.
+        tools, pyright_task_tools = _resolve_pyright_typecheck_tools(
+            pixi_adapter, tools, project_path, environment
+        )
+
         # Optimize environment if requested
         optimization_result = None
         if environment_optimization:
@@ -2188,7 +2232,7 @@ def quality_execute_pixi_aware_assessment(
         # Execute quality tasks using enhanced adapter
         results = []
         for tool in tools:
-            if tool in env_info.available_tools:
+            if tool in env_info.available_tools or tool in pyright_task_tools:
                 try:
                     # Generate template if requested
                     template = None

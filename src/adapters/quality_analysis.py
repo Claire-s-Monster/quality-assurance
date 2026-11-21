@@ -24,6 +24,7 @@ from core.models import (
     QualityMetrics,
 )
 from core.ports import QualityAnalysisPort
+from adapters.direct_pixi_execution import parse_pyright_text
 
 
 class QualityAnalysisAdapter(QualityAnalysisPort):
@@ -72,6 +73,8 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
                 parsed_data = self._parse_ruff_output(raw_output)
             elif tool == QualityTool.MYPY:
                 parsed_data = self._parse_mypy_output(raw_output)
+            elif tool == QualityTool.PYRIGHT:
+                parsed_data = self._parse_pyright_output(raw_output)
             elif tool == QualityTool.BANDIT:
                 parsed_data = self._parse_bandit_output(raw_output)
             elif tool == QualityTool.RADON:
@@ -710,6 +713,32 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
             else 0,
         }
 
+    def _parse_pyright_output(self, output: str) -> Dict[str, Any]:
+        """Parse pyright output (text or JSON) via the shared parser."""
+        severities = {
+            "error": ViolationSeverity.HIGH,
+            "warning": ViolationSeverity.MEDIUM,
+        }
+        diagnostics, _ = parse_pyright_text(output)
+        violations = [
+            QualityViolation(
+                tool=QualityTool.PYRIGHT,
+                rule_code=rule or "pyright",
+                message=message,
+                severity=severities.get(severity, ViolationSeverity.INFO),
+                file_path=file_path,
+                line_number=line_num,
+                column_number=col_num,
+                fixable=False,
+            )
+            for file_path, line_num, col_num, severity, message, rule in diagnostics
+        ]
+        return {
+            "assessment_type": QualityAssessmentType.TYPECHECK,
+            "violations": violations,
+            "files_analyzed": len({v.file_path for v in violations}),
+        }
+
     def _parse_bandit_output(self, output: str) -> Dict[str, Any]:
         """Parse bandit security scanner output."""
         security_issues = []
@@ -922,7 +951,15 @@ class QualityAnalysisAdapter(QualityAnalysisPort):
                 if s.severity in [ViolationSeverity.CRITICAL, ViolationSeverity.HIGH]
             ),
             dead_code_count=len(dead_code_results),
-            type_errors=sum(1 for v in violations if v.tool == QualityTool.MYPY),
+            type_errors=sum(
+                1
+                for v in violations
+                if v.tool == QualityTool.MYPY
+                or (
+                    v.tool == QualityTool.PYRIGHT
+                    and v.severity == ViolationSeverity.HIGH
+                )
+            ),
             total_lines=0,  # Will be calculated from file analysis
             code_lines=0,
             comment_lines=0,

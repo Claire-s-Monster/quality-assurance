@@ -22,6 +22,7 @@ class QualityTool(str, Enum):
 
     RUFF = "ruff"
     MYPY = "mypy"
+    PYRIGHT = "pyright"
     BANDIT = "bandit"
     RADON = "radon"
     VULTURE = "vulture"

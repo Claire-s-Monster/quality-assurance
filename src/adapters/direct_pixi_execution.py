@@ -34,6 +34,7 @@ _log = logging.getLogger(__name__)
 TOOL_TASK_ALIASES: Dict[str, tuple[str, ...]] = {
     "ruff": ("lint", "ruff-check", "ruff"),
     "mypy": ("typecheck", "mypy", "type-check"),
+    "pyright": ("typecheck", "pyright", "type-check"),
     "bandit": ("security-scan", "security", "bandit"),
     "radon": ("complexity-check", "complexity", "radon"),
     "vulture": ("dead-code-check", "dead-code", "deadcode", "vulture"),
@@ -71,6 +72,183 @@ def is_execution_failure(result: Dict[str, Any]) -> bool:
     if result.get("error"):
         return True
     return result.get("exit_code") not in (0, 1)
+
+
+_TYPECHECKERS = {"pyright": "pyright", "basedpyright": "pyright", "mypy": "mypy"}
+
+# pyright text output: "  /path/f.py:12:5 - error: message (reportRule)" and a
+# closing "2 errors, 1 warning, 0 informations" summary.
+PYRIGHT_DIAGNOSTIC_RE = re.compile(
+    r"^\s*(.+?):(\d+):(\d+) - (error|warning|information): (.*?)(?: \((\w+)\))?\s*$"
+)
+PYRIGHT_SUMMARY_RE = re.compile(
+    r"(\d+) errors?, (\d+) warnings?, (\d+) informations?", re.IGNORECASE
+)
+
+
+PyrightDiagnostic = tuple[str, int, int, str, str, Optional[str]]
+
+
+def _pyright_json(output: str) -> Optional[Dict[str, Any]]:
+    """The `pyright --outputjson` report in `output`, or None."""
+    decoder = json.JSONDecoder()
+    start = output.find("{")
+    while start >= 0:
+        try:
+            data, _ = decoder.raw_decode(output, start)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict) and "generalDiagnostics" in data:
+            return data
+        start = output.find("{", start + 1)
+    return None
+
+
+def _parse_pyright_json(data: Dict[str, Any]) -> tuple[List[PyrightDiagnostic], int]:
+    """Diagnostics (1-based line/column) and error count of a pyright JSON report."""
+    diagnostics: List[PyrightDiagnostic] = []
+    for entry in data.get("generalDiagnostics") or []:
+        start = (entry.get("range") or {}).get("start") or {}
+        diagnostics.append(
+            (
+                str(entry.get("file", "")),
+                int(start.get("line", 0)) + 1,
+                int(start.get("character", 0)) + 1,
+                str(entry.get("severity", "error")),
+                str(entry.get("message", "")),
+                entry.get("rule"),
+            )
+        )
+    error_count = sum(1 for d in diagnostics if d[3] == "error")
+    summary_errors = (data.get("summary") or {}).get("errorCount")
+    if isinstance(summary_errors, int):
+        error_count = max(error_count, summary_errors)
+    return diagnostics, error_count
+
+
+def is_pyright_output(output: str) -> bool:
+    """Whether `output` is a pyright text or JSON report (not just noise)."""
+    return bool(
+        PYRIGHT_SUMMARY_RE.search(output)
+        or any(PYRIGHT_DIAGNOSTIC_RE.match(line) for line in output.splitlines())
+        or _pyright_json(output)
+    )
+
+
+def parse_pyright_text(
+    output: str,
+) -> tuple[List[PyrightDiagnostic], int]:
+    """Parse pyright output (text, or `--outputjson`).
+
+    Returns (diagnostics, error_count); each diagnostic is (file, line, column,
+    severity, message, rule). error_count is the summary's when it is larger
+    than the number of parsed error diagnostics.
+    """
+    report = _pyright_json(output)
+    if report is not None:
+        return _parse_pyright_json(report)
+    # Indented lines after a diagnostic continue its message; the (reportRule)
+    # suffix is then on the last of them.
+    entries: List[List[Any]] = []
+    for line in output.splitlines():
+        match = PYRIGHT_DIAGNOSTIC_RE.match(line)
+        if match:
+            path, line_no, col, severity, message, rule = match.groups()
+            entries.append([path, int(line_no), int(col), severity, [message], rule])
+        elif entries and line.strip() and line[0].isspace():
+            entries[-1][4].append(line.strip())
+    diagnostics = []
+    for path, line_no, col, severity, parts, rule in entries:
+        message = "\n".join(parts)
+        if rule is None and len(parts) > 1:
+            tail = re.search(r" \((\w+)\)$", message)
+            if tail:
+                rule, message = tail.group(1), message[: tail.start()]
+        diagnostics.append((path, line_no, col, severity, message, rule))
+    error_count = sum(1 for d in diagnostics if d[3] == "error")
+    summary = PYRIGHT_SUMMARY_RE.search(output)
+    if summary:
+        error_count = max(error_count, int(summary.group(1)))
+    return diagnostics, error_count
+
+
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_]\w*=")
+
+
+def typechecker_executable(body: Any) -> Optional[str]:
+    """The type checker executable a task body runs (e.g. "basedpyright"), or None.
+
+    Looks at the first real command token, after unwrapping `NAME=value`
+    assignments, `env [-i|-u X|-C X] [NAME=value]...`, `pixi run [-e X]`,
+    `uv run` and `python -m`.
+    """
+    if isinstance(body, str):
+        try:
+            tokens = shlex.split(body)
+        except ValueError:
+            return None
+    elif isinstance(body, list):
+        tokens = [str(t) for t in body]
+    else:
+        return None
+    i, _ = _command_start(tokens)
+    name = Path(tokens[i]).name if i < len(tokens) else None
+    return name if name in _TYPECHECKERS else None
+
+
+def _strip_pixi_run(
+    tokens: List[str],
+) -> tuple[Optional[str], Optional[List[str]], Optional[str]]:
+    """(pixi env from `-e`, argv after any `pixi run [-e X]`, reason).
+
+    argv is None, with a reason, for an unsupported `pixi run` flag.
+    """
+    env: Optional[str] = None
+    if tokens[:2] == ["pixi", "run"]:
+        i = 2
+        while i < len(tokens) and tokens[i].startswith("-"):
+            flag = tokens[i]
+            if flag in ("-e", "--environment") and i + 1 < len(tokens):
+                env, i = tokens[i + 1], i + 2
+            elif flag.startswith("--environment="):
+                env, i = flag.split("=", 1)[1], i + 1
+            else:
+                return None, None, f"unsupported pixi run flag {flag!r}"
+        tokens = tokens[i:]
+    return env, tokens, None
+
+
+def _command_start(tokens: List[str]) -> tuple[int, bool]:
+    """Index of the first real command token, and whether `env`/`NAME=value`
+    prefixes (which a direct run cannot carry) were skipped on the way."""
+    i = 0
+    env_prefixed = False
+    while i < len(tokens):
+        if tokens[i : i + 2] in (["pixi", "run"], ["uv", "run"]):
+            i += 2
+            while i < len(tokens) and tokens[i].startswith("-"):
+                i += 2 if tokens[i] in ("-e", "--environment") else 1
+        elif tokens[i : i + 2] in (["python", "-m"], ["python3", "-m"]):
+            i += 2
+        elif tokens[i] == "env":
+            i, env_prefixed = i + 1, True
+            while i < len(tokens) and tokens[i].startswith("-"):
+                i += 2 if tokens[i] in ("-u", "--unset", "-C", "--chdir") else 1
+        elif _ENV_ASSIGNMENT_RE.match(tokens[i]):
+            i, env_prefixed = i + 1, True
+        else:
+            break
+    return i, env_prefixed
+
+
+def detect_typechecker(body: Any) -> Optional[str]:
+    """Classify a task body's type checker: "pyright", "mypy" or None.
+
+    None when the body is not recognised, so callers keep the checker the
+    user asked for. See typechecker_executable for the prefixes unwrapped.
+    """
+    executable = typechecker_executable(body)
+    return _TYPECHECKERS[executable] if executable else None
 
 
 _RUFF_NON_CHECK_COMMANDS = frozenset(
@@ -173,6 +351,7 @@ class DirectPixiExecutionAdapter:
         self._quality_tools_patterns = {
             "ruff": ["ruff", "ruff check", "ruff format"],
             "mypy": ["mypy", "python -m mypy"],
+            "pyright": ["pyright", "basedpyright"],
             "bandit": ["bandit", "python -m bandit"],
             "pytest": ["pytest", "python -m pytest"],
             "radon": ["radon", "python -m radon"],
@@ -861,7 +1040,16 @@ class DirectPixiExecutionAdapter:
             # Detect and validate quality environment
             env_info = self.detect_quality_environment(working_dir)
 
-            if quality_tool not in env_info.available_tools:
+            # A typecheck task may run pyright whatever checker was asked for;
+            # mypy's builder args are invalid for it, so it runs as defined,
+            # and it needs no separately detected "mypy"/"pyright" tool.
+            body = self._get_available_tasks(working_dir, environment).get(task_name)
+            pyright_task = False
+            if quality_tool in ("mypy", "pyright") and detect_typechecker(body) == (
+                "pyright"
+            ):
+                quality_tool, pyright_task = "pyright", True
+            elif quality_tool not in env_info.available_tools:
                 return {
                     "success": False,
                     "stdout": "",
@@ -883,7 +1071,6 @@ class DirectPixiExecutionAdapter:
 
             # Appending the tool's own args is only valid when the task body is
             # the bare tool; any other body must not be run with them appended.
-            body = self._get_available_tasks(working_dir, environment).get(task_name)
             if body is not None and not isinstance(body, (str, list)):
                 return {
                     "success": False,
@@ -903,7 +1090,12 @@ class DirectPixiExecutionAdapter:
             capture_notes: Dict[str, str] = {}
             output_file = self._new_bandit_output_file(quality_tool, capture_notes)
             try:
-                if body is None or self._is_bare_tool_body(body, quality_tool):
+                if quality_tool == "pyright":
+                    base_result, body_mode, note = self._run_pyright_task(
+                        task_name, body, timeout, working_dir, environment
+                    )
+                    capture_notes["task_args_note"] = note
+                elif body is None or self._is_bare_tool_body(body, quality_tool):
                     body_mode = "task"
                     if quality_tool == "bandit":
                         optimized_args = self._with_bandit_file_output(
@@ -943,6 +1135,10 @@ class DirectPixiExecutionAdapter:
             enhanced_result = self._enhance_quality_result(
                 base_result, quality_tool, env_info, start_time
             )
+            # The task's checker ran, so it is available whether or not it was
+            # separately detected in the environment.
+            if pyright_task and not is_execution_failure(base_result):
+                enhanced_result["quality_intelligence"]["tool_available"] = True
 
             return enhanced_result
 
@@ -1540,6 +1736,66 @@ class DirectPixiExecutionAdapter:
             "cache_friendly": "ruff" in available_tools,
         }
 
+    def _run_pyright_task(
+        self,
+        task_name: str,
+        body: str | List[str] | None,
+        timeout: int,
+        working_dir: str,
+        environment: str | None,
+    ) -> tuple[Dict[str, Any], str, str]:
+        """Run a pyright task without any builder args.
+
+        A non-bare body that is a single invocation (optionally behind `pixi
+        run`, `uv run` or `python -m`) runs as its own argv, prefix included
+        and unrewritten, so the task's `depends-on` tasks do not run. A bare body, or one that cannot be run
+        directly (e.g. `env FOO=1 pyright`, `FOO=1 pyright`), runs the task by
+        name, and then its `depends-on` tasks may run too.
+        Returns (result, task_body_mode, task_args_note).
+        """
+        executable = typechecker_executable(body)
+        if (
+            body is not None
+            and executable
+            and not self._is_bare_tool_body(body, executable)
+        ):
+            _, args, _ = self._parse_task_body_args(body, "pyright")
+            # The prefix scanner only detects and locates arguments; what runs
+            # is the body's own argv (`uv run`/`python -m` prefix included).
+            _, command, _ = self._body_command(body)
+            if args is not None and command:
+                result = self._run_tool_directly(
+                    task_name,
+                    "pyright",
+                    body,
+                    [],
+                    {},
+                    timeout,
+                    working_dir,
+                    environment,
+                    executable=executable,
+                    command=command,
+                )
+                return (
+                    result,
+                    "direct_tool",
+                    "pyright body run as its own command; target_paths and "
+                    "quality_config were not applied; depends-on tasks do not run",
+                )
+        result = self.run_task(
+            task_name=task_name,
+            args=[],
+            timeout=timeout,
+            working_dir=working_dir,
+            environment=environment,
+        )
+        return (
+            result,
+            "task_as_defined",
+            "pyright task run by name as defined; target_paths and "
+            "quality_config were not applied; depends-on tasks may run",
+        )
+
     def _run_tool_directly(
         self,
         task_name: str,
@@ -1551,6 +1807,8 @@ class DirectPixiExecutionAdapter:
         working_dir: str,
         environment: str | None,
         output_file: str | None = None,
+        executable: str | None = None,
+        command: List[str] | None = None,
     ) -> Dict[str, Any]:
         """Run the tool itself for an alias task whose body is a full command.
 
@@ -1558,8 +1816,12 @@ class DirectPixiExecutionAdapter:
         builders would add), falling back to the builder args when the body
         cannot be parsed safely. The environment is the caller's, else the
         body's `-e`, else one that declares the tool, else the usual choice.
+        `command`, when given, is the exact argv to run (e.g. with a `uv run`
+        prefix) instead of the tool plus its parsed arguments.
         """
         body_env, task_args, reason = self._parse_task_body_args(body, quality_tool)
+        if command is not None and task_args is not None:
+            task_args = command[1:]
         if task_args is None:
             args = builder_args
             args_info = {
@@ -1579,7 +1841,9 @@ class DirectPixiExecutionAdapter:
         elif body_env:
             environment, source = body_env, "task_body"
         else:
-            providers = self.environments_providing_tool(quality_tool, working_dir)
+            providers = self.environments_providing_tool(
+                executable or quality_tool, working_dir
+            )
             if providers is not None and not providers:
                 message = (
                     f"{quality_tool} is not installed in any pixi environment "
@@ -1601,7 +1865,7 @@ class DirectPixiExecutionAdapter:
             )
 
         result = self.run_task(
-            task_name=quality_tool,
+            task_name=command[0] if command else (executable or quality_tool),
             args=args,
             timeout=timeout,
             working_dir=working_dir,
@@ -1631,6 +1895,19 @@ class DirectPixiExecutionAdapter:
                 return None, f"task body uses shell expansion in {token!r}"
         return tokens, None
 
+    def _body_command(
+        self, body: str | List[str]
+    ) -> tuple[Optional[str], Optional[List[str]], Optional[str]]:
+        """(pixi env from `-e`, argv after any `pixi run [-e X]`, reason).
+
+        argv is None, with a reason, when the body uses shell syntax or an
+        unsupported `pixi run` flag.
+        """
+        tokens, reason = self._split_task_body(body)
+        if tokens is None:
+            return None, None, reason
+        return _strip_pixi_run(tokens)
+
     def _parse_task_body_args(
         self, body: str | List[str], tool: str
     ) -> tuple[Optional[str], Optional[List[str]], Optional[str]]:
@@ -1642,21 +1919,24 @@ class DirectPixiExecutionAdapter:
         tokens, reason = self._split_task_body(body)
         if tokens is None:
             return None, None, reason
+        env, tokens, reason = _strip_pixi_run(tokens)
+        if tokens is None:
+            return None, None, reason
 
-        env: Optional[str] = None
-        if tokens[:2] == ["pixi", "run"]:
-            i = 2
-            while i < len(tokens) and tokens[i].startswith("-"):
-                flag = tokens[i]
-                if flag in ("-e", "--environment") and i + 1 < len(tokens):
-                    env, i = tokens[i + 1], i + 2
-                elif flag.startswith("--environment="):
-                    env, i = flag.split("=", 1)[1], i + 1
-                else:
-                    return None, None, f"unsupported pixi run flag {flag!r}"
-            tokens = tokens[i:]
+        if tool == "pyright":
+            # Also unwrap `uv run` / `python -m`; env assignments cannot be
+            # carried by a direct run, so such bodies are not parsed.
+            start, env_prefixed = _command_start(tokens)
+            if env_prefixed:
+                return (
+                    None,
+                    None,
+                    "task body sets environment variables a direct run cannot carry",
+                )
+            tokens = tokens[start:]
 
-        if not tokens or tokens[0] != tool:
+        accepted = (tool, "basedpyright") if tool == "pyright" else (tool,)
+        if not tokens or tokens[0] not in accepted:
             found = tokens[0] if tokens else "nothing"
             return None, None, f"task body runs {found!r}, not {tool!r}"
         args = tokens[1:]
@@ -1897,6 +2177,11 @@ class DirectPixiExecutionAdapter:
                 f"bandit reported {parsed_output['error_count']} error(s) "
                 "while scanning (see parsed_output.errors)"
             )
+        elif quality_tool == "pyright" and found_issues:
+            # pyright exits 1 whenever it reports diagnostics; any parsed
+            # diagnostic or summary line is findings (even warnings only).
+            enhanced_result["parsed_output"] = bound_parsed_output(parsed_output)
+            enhanced_result["findings_detected"] = True
         elif self._parsed_finding_count(parsed_output) > 0:
             # Findings count whatever the exit code (e.g. --exit-zero).
             enhanced_result["parsed_output"] = bound_parsed_output(parsed_output)
@@ -1929,6 +2214,8 @@ class DirectPixiExecutionAdapter:
                 return self._parse_ruff_output(stdout)
             elif quality_tool == "mypy" and stdout:
                 return self._parse_mypy_output(stdout)
+            elif quality_tool == "pyright" and stdout:
+                return self._parse_pyright_output(stdout)
             elif quality_tool == "bandit" and stdout:
                 return self._parse_bandit_output(stdout)
             elif quality_tool == "pytest" and stdout:
@@ -1978,6 +2265,30 @@ class DirectPixiExecutionAdapter:
             if isinstance(entry, dict) and entry.get("severity") == "error":
                 errors.append(line)
         return {"tool": "mypy", "type_errors": errors, "error_count": len(errors)}
+
+    def _parse_pyright_output(self, output: str) -> Dict[str, Any] | None:
+        """Parse pyright text output; None when it has no diagnostics or summary."""
+        if not is_pyright_output(output):
+            return None
+        diagnostics, error_count = parse_pyright_text(output)
+
+        def lines(severity: str) -> List[str]:
+            return [
+                f"{path}:{line}:{col} - {severity}: {message}"
+                for path, line, col, sev, message, _ in diagnostics
+                if sev == severity
+            ]
+
+        # error_count counts errors only: warnings/informations are reported
+        # but are not findings (as in execute_typecheck_assessment, where exit 0
+        # with only warnings is a SUCCESS).
+        return {
+            "tool": "pyright",
+            "type_errors": lines("error"),
+            "error_count": error_count,
+            "warnings": lines("warning"),
+            "informations": lines("information"),
+        }
 
     _BANDIT_MAX_ISSUES = 50
     _BANDIT_MAX_ERRORS = 20
