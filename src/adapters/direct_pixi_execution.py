@@ -1339,16 +1339,16 @@ class DirectPixiExecutionAdapter:
                 health,
                 declared_elsewhere,
             )
-            # A failed version probe means the task's pyright did not resolve.
-            if (
-                mypy_covered
-                and "pyright" in pyright_executables
-                and "pyright" not in tool_versions
-            ):
-                recommendations.append(
-                    "typecheck task runs pyright but pyright was not found in "
-                    "the pixi environment: pixi add pyright"
-                )
+            # Mypy is covered by a pyright-family task; advise only when no
+            # environment in the manifest declares that checker ([] = read and
+            # undeclared, None = cannot tell).
+            if mypy_covered:
+                for executable in sorted(pyright_executables):
+                    if self.environments_providing_tool(executable, working_dir) == []:
+                        recommendations.append(
+                            f"typecheck task runs {executable} but no pixi "
+                            f"environment declares it: pixi add {executable}"
+                        )
 
             # Calculate performance indicators
             performance_indicators = self._calculate_performance_indicators(

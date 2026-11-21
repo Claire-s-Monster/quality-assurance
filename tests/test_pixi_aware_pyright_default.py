@@ -153,17 +153,58 @@ class TestMypyRecommendationWhenTypeCheckCovered:
             "Install essential tools" in r and "mypy" in r for r in env.recommendations
         )
 
-    def test_unresolvable_pyright_gets_actionable_recommendation(self):
-        env = _detected_env(self.PYRIGHT_TASKS)
+    @staticmethod
+    def _manifest_env(tmp_path, tasks, pyright_feature=None):
+        """Real manifest in pyproject [tool.pixi] form; tool_versions stay empty."""
+        lines = [
+            "[project]",
+            'name = "demo"',
+            "[tool.pixi.dependencies]",
+            'ruff = "*"',
+            "[tool.pixi.environments]",
+            'quality = ["quality"]',
+            "[tool.pixi.feature.quality.dependencies]",
+        ]
+        if pyright_feature:
+            lines.append(f'{pyright_feature} = "*"')
+        (tmp_path / "pyproject.toml").write_text("\n".join(lines) + "\n")
+        adapter = DirectPixiExecutionAdapter(logging=Mock(), working_dir=str(tmp_path))
+        adapter._is_pixi_project = Mock(return_value=True)
+        adapter._get_available_tasks = Mock(return_value=tasks)
+        adapter._get_tool_version = Mock(return_value=None)
+        return adapter.detect_quality_environment(str(tmp_path))
+
+    def test_pyright_declared_only_in_non_default_env_gets_no_recommendation(
+        self, tmp_path
+    ):
+        env = self._manifest_env(tmp_path, self.PYRIGHT_TASKS, "pyright")
+        assert "pyright" not in env.tool_versions
+        assert not any("pixi add" in r for r in env.recommendations)
+
+    def test_pyright_declared_nowhere_gets_actionable_recommendation(self, tmp_path):
+        env = self._manifest_env(tmp_path, self.PYRIGHT_TASKS)
         assert any("pixi add pyright" in r for r in env.recommendations)
         assert not any("mypy" in r for r in env.recommendations)
 
-    def test_resolvable_pyright_gets_no_install_recommendation(self):
+    def test_basedpyright_declared_nowhere_gets_basedpyright_recommendation(
+        self, tmp_path
+    ):
+        tasks = {"typecheck": "basedpyright src/", "lint": "ruff check ."}
+        env = self._manifest_env(tmp_path, tasks)
+        assert any("pixi add basedpyright" in r for r in env.recommendations)
+        assert not any("pixi add pyright" in r for r in env.recommendations)
+
+    def test_basedpyright_declared_in_feature_gets_no_recommendation(self, tmp_path):
+        tasks = {"typecheck": "basedpyright src/", "lint": "ruff check ."}
+        env = self._manifest_env(tmp_path, tasks, "basedpyright")
+        assert not any("pixi add" in r for r in env.recommendations)
+
+    def test_unreadable_manifest_gives_no_install_recommendation(self):
         adapter = DirectPixiExecutionAdapter(logging=Mock(), working_dir="/tmp/project")
         adapter._is_pixi_project = Mock(return_value=True)
         adapter._get_available_tasks = Mock(return_value=self.PYRIGHT_TASKS)
-        adapter._get_tool_version = Mock(return_value="pyright 1.1.400")
-        adapter.environments_providing_tool = Mock(return_value=[])
+        adapter._get_tool_version = Mock(return_value=None)
+        adapter.environments_providing_tool = Mock(return_value=None)
         env = adapter.detect_quality_environment("/tmp/project")
         assert not any("pixi add pyright" in r for r in env.recommendations)
 
