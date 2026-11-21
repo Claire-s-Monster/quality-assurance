@@ -258,12 +258,12 @@ _SHELLS = frozenset({"bash", "sh"})
 _NON_CHECK_FLAGS = frozenset({"--version", "--help", "-h"})
 
 
-def _pyright_executables(body: Any, depth: int = 0) -> Set[str]:
-    """pyright-family executables a task body really runs to check code.
+def _command_segments(body: Any, depth: int = 0) -> List[List[str]]:
+    """Argv of every command a task body runs.
 
     Splits string bodies on shell separators and unwraps `bash|sh -c '...'`;
-    `--version`/`--help` invocations do not count. Coverage-only: execution
-    paths keep using detect_typechecker.
+    argv-list bodies are one command. Words that are mere arguments (e.g.
+    `echo black`) stay inside their own command's argv, never at its start.
     """
     if isinstance(body, str):
         try:
@@ -271,11 +271,11 @@ def _pyright_executables(body: Any, depth: int = 0) -> Set[str]:
             lexer.whitespace_split = True
             tokens = list(lexer)
         except ValueError:
-            return set()
+            return []
     elif isinstance(body, list):
         tokens = [str(t) for t in body]
     else:
-        return set()
+        return []
 
     segments: List[List[str]] = [[]]
     for token in tokens:
@@ -284,7 +284,7 @@ def _pyright_executables(body: Any, depth: int = 0) -> Set[str]:
         else:
             segments[-1].append(token)
 
-    found: Set[str] = set()
+    leaves: List[List[str]] = []
     for seg in segments:
         if not seg:
             continue
@@ -294,8 +294,38 @@ def _pyright_executables(body: Any, depth: int = 0) -> Set[str]:
                 None,
             )
             if flag is not None:
-                found |= _pyright_executables(seg[flag + 1], depth + 1)
+                leaves.extend(_command_segments(seg[flag + 1], depth + 1))
                 continue
+        leaves.append(seg)
+    return leaves
+
+
+def runs_command(body: Any, tool: str, subcommand: Optional[str] = None) -> bool:
+    """True when a task body really runs `tool` (optionally `tool subcommand`).
+
+    Only the executable position counts, after unwrapping `pixi run`,
+    `uv run`, `python -m` and `env`/`NAME=value` prefixes, so `echo black`,
+    comments and arguments never match. Handles string and argv-list bodies.
+    """
+    for seg in _command_segments(body):
+        start, _ = _command_start(seg)
+        if start >= len(seg) or Path(seg[start]).name != tool:
+            continue
+        if subcommand is None or (
+            start + 1 < len(seg) and seg[start + 1] == subcommand
+        ):
+            return True
+    return False
+
+
+def _pyright_executables(body: Any) -> Set[str]:
+    """pyright-family executables a task body really runs to check code.
+
+    `--version`/`--help` invocations do not count. Coverage-only: execution
+    paths keep using detect_typechecker.
+    """
+    found: Set[str] = set()
+    for seg in _command_segments(body):
         executable = typechecker_executable(seg)
         if executable and _TYPECHECKERS[executable] == "pyright":
             start, _ = _command_start(seg)
@@ -912,6 +942,35 @@ class DirectPixiExecutionAdapter:
         except Exception:
             return {}
 
+    def _all_task_bodies(self, path: str) -> List[Any]:
+        """Every task command body in the manifest, duplicates retained.
+
+        Unlike `_get_available_tasks`, same-named tasks in the top-level
+        table and in different features are not collapsed, so no definition
+        is hidden from content scans. Bodies are strings or argv lists.
+        """
+        try:
+            config = self._load_pixi_config(path)
+        except Exception:
+            return []
+        if not config:
+            return []
+
+        tables = [config.get("tasks", {}) or {}]
+        for feature_config in (config.get("feature", {}) or {}).values():
+            tables.append((feature_config or {}).get("tasks", {}) or {})
+
+        bodies: List[Any] = []
+        for table in tables:
+            for task_def in table.values():
+                body = task_def.get("cmd") if isinstance(task_def, dict) else task_def
+                # A list of tables is a depends-on alias, not an argv.
+                if isinstance(body, str) or (
+                    isinstance(body, list) and all(isinstance(t, str) for t in body)
+                ):
+                    bodies.append(body)
+        return bodies
+
     def environments_for_task(
         self, task_name: str, working_dir: str | None = None
     ) -> List[str]:
@@ -1334,6 +1393,9 @@ class DirectPixiExecutionAdapter:
                 available_tools, missing_tools, quality_tasks, declared_elsewhere
             )
 
+            # Every definition, not the by-name collapse in available_tasks.
+            all_task_bodies = self._all_task_bodies(working_dir)
+
             # Generate recommendations
             recommendations = self._generate_environment_recommendations(
                 available_tools,
@@ -1342,12 +1404,11 @@ class DirectPixiExecutionAdapter:
                 health,
                 declared_elsewhere,
                 black_in_use=(
-                    "black" in available_tools
+                    any(runs_command(body, "black") for body in all_task_bodies)
                     or bool(self.environments_providing_tool("black", working_dir))
                 ),
                 ruff_format_used=any(
-                    re.search(r"\bruff\s+format\b", str(body))
-                    for body in available_tasks.values()
+                    runs_command(body, "ruff", "format") for body in all_task_bodies
                 ),
             )
             # Mypy is covered by a pyright-family task; advise only when no
