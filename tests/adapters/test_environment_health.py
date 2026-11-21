@@ -75,6 +75,112 @@ class TestEnvironmentRecommendations:
         assert any("1" in r and "quality task" in r for r in recs)
 
 
+BASE_TASKS = {
+    "lint": "ruff check src/",
+    "typecheck": "mypy src/",
+    "test": "pytest tests/",
+}
+TIP = "Consider using ruff format instead of black"
+
+
+class TestRuffFormatTip:
+    def _recs(self, adapter, tmp_path, tasks, black_envs):
+        with (
+            patch.object(adapter, "_is_pixi_project", return_value=True),
+            patch.object(adapter, "_get_available_tasks", return_value=tasks),
+            patch.object(
+                adapter, "_all_task_bodies", return_value=list(tasks.values())
+            ),
+            patch.object(adapter, "_get_tool_version", return_value=None),
+            patch.object(
+                adapter,
+                "environments_providing_tool",
+                side_effect=lambda tool, wd=None: black_envs if tool == "black" else [],
+            ),
+        ):
+            info = adapter.detect_quality_environment(working_dir=str(tmp_path))
+        return info.recommendations
+
+    def test_no_black_no_tip(self, adapter, tmp_path):
+        assert TIP not in self._recs(adapter, tmp_path, BASE_TASKS, [])
+
+    def test_black_task_without_ruff_format_gives_tip(self, adapter, tmp_path):
+        tasks = {**BASE_TASKS, "fmt": "black src/"}
+        assert TIP in self._recs(adapter, tmp_path, tasks, [])
+
+    def test_black_declared_and_ruff_format_task_no_tip(self, adapter, tmp_path):
+        tasks = {**BASE_TASKS, "format": "ruff format src/"}
+        assert TIP not in self._recs(adapter, tmp_path, tasks, ["dev"])
+
+    def test_black_declared_only_gives_tip(self, adapter, tmp_path):
+        assert TIP in self._recs(adapter, tmp_path, BASE_TASKS, ["dev"])
+
+    def test_qa_shape_black_in_non_default_feature_with_ruff_format_check(
+        self, adapter, tmp_path
+    ):
+        tasks = {**BASE_TASKS, "format-check": "ruff format --check src/ tests/"}
+        assert TIP not in self._recs(adapter, tmp_path, tasks, ["dev"])
+
+
+class TestRuffFormatTipTaskParsing:
+    """Formatter use is read from parsed commands, across every definition."""
+
+    def test_argv_list_ruff_format_suppresses_tip(self, adapter, tmp_path):
+        tasks = {**BASE_TASKS, "format": ["ruff", "format", "src/"]}
+        assert TIP not in TestRuffFormatTip._recs(
+            None, adapter, tmp_path, tasks, ["dev"]
+        )
+
+    def test_argv_list_black_gives_tip(self, adapter, tmp_path):
+        tasks = {**BASE_TASKS, "fmt": ["black", "src/"]}
+        assert TIP in TestRuffFormatTip._recs(None, adapter, tmp_path, tasks, [])
+
+    def test_incidental_black_text_is_not_black_in_use(self, adapter, tmp_path):
+        tasks = {**BASE_TASKS, "note": "echo black is retired  # black"}
+        assert TIP not in TestRuffFormatTip._recs(None, adapter, tmp_path, tasks, [])
+
+    def test_incidental_ruff_format_text_does_not_suppress_tip(self, adapter, tmp_path):
+        tasks = {**BASE_TASKS, "note": "echo ruff format is great"}
+        assert TIP in TestRuffFormatTip._recs(None, adapter, tmp_path, tasks, ["dev"])
+
+    def test_prefixed_and_chained_invocations_count(self, adapter, tmp_path):
+        tasks = {
+            **BASE_TASKS,
+            "fmt": "pixi run -e dev python -m black src/ && echo done",
+        }
+        assert TIP in TestRuffFormatTip._recs(None, adapter, tmp_path, tasks, [])
+
+    def test_duplicate_task_names_across_features_are_all_scanned(
+        self, adapter, tmp_path
+    ):
+        (tmp_path / "pixi.toml").write_text(
+            '[tasks]\nformat = "ruff format src/"\n'
+            '[feature.a.tasks]\nformat = "echo overwritten"\n'
+            '[feature.b.tasks]\nfmt = "black src/"\n'
+        )
+        with (
+            patch.object(adapter, "_get_tool_version", return_value=None),
+            patch.object(adapter, "environments_providing_tool", return_value=[]),
+        ):
+            info = adapter.detect_quality_environment(working_dir=str(tmp_path))
+        # `format` is collapsed to the feature's echo by name, yet ruff format
+        # is still seen, so the tip stays off although black runs in `fmt`.
+        assert TIP not in info.recommendations
+
+    def test_duplicate_black_definition_overwritten_by_name_still_seen(
+        self, adapter, tmp_path
+    ):
+        (tmp_path / "pixi.toml").write_text(
+            '[tasks]\nfmt = "black src/"\n[feature.a.tasks]\nfmt = "echo skip"\n'
+        )
+        with (
+            patch.object(adapter, "_get_tool_version", return_value=None),
+            patch.object(adapter, "environments_providing_tool", return_value=[]),
+        ):
+            info = adapter.detect_quality_environment(working_dir=str(tmp_path))
+        assert TIP in info.recommendations
+
+
 class TestDetectUsesAnyEnvironment:
     def test_tool_in_quality_extended_only_does_not_make_project_suboptimal(
         self, adapter, tmp_path
