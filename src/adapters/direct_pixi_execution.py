@@ -27,6 +27,7 @@ from dataclasses import dataclass
 
 from core.payload_bounds import bound_parsed_output
 from core.ports import LoggingPort
+from core.subprocess_env import target_project_env
 
 _log = logging.getLogger(__name__)
 
@@ -502,6 +503,7 @@ class DirectPixiExecutionAdapter:
                 text=True,
                 cwd=working_dir,
                 timeout=timeout,
+                env=target_project_env(),
             )
 
             execution_time = time.time() - start_time
@@ -752,6 +754,7 @@ class DirectPixiExecutionAdapter:
                     text=True,
                     cwd=working_dir,
                     timeout=10,
+                    env=target_project_env(),
                 )
                 pixi_info_available = result.returncode == 0
                 pixi_info_output = result.stdout if pixi_info_available else None
@@ -1338,6 +1341,14 @@ class DirectPixiExecutionAdapter:
                 quality_tasks,
                 health,
                 declared_elsewhere,
+                black_in_use=(
+                    "black" in available_tools
+                    or bool(self.environments_providing_tool("black", working_dir))
+                ),
+                ruff_format_used=any(
+                    re.search(r"\bruff\s+format\b", str(body))
+                    for body in available_tasks.values()
+                ),
             )
             # Mypy is covered by a pyright-family task; advise only when no
             # environment in the manifest declares that checker ([] = read and
@@ -1729,6 +1740,7 @@ class DirectPixiExecutionAdapter:
                         text=True,
                         cwd=working_dir,
                         timeout=10,
+                        env=target_project_env(),
                     )
                     if result.returncode == 0:
                         return result.stdout.strip().split("\n")[0]
@@ -1782,6 +1794,8 @@ class DirectPixiExecutionAdapter:
         quality_tasks: Dict[str, str],
         health: str,
         declared_elsewhere: Set[str] | None = None,
+        black_in_use: bool = False,
+        ruff_format_used: bool = False,
     ) -> List[str]:
         """Generate environment improvement recommendations."""
         recommendations = []
@@ -1804,7 +1818,7 @@ class DirectPixiExecutionAdapter:
                 "environment; configure at least 3 in pixi.toml"
             )
 
-        if "ruff" in available_tools and "black" in missing_tools:
+        if black_in_use and not ruff_format_used:
             recommendations.append("Consider using ruff format instead of black")
 
         return recommendations

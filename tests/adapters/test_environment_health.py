@@ -75,6 +75,50 @@ class TestEnvironmentRecommendations:
         assert any("1" in r and "quality task" in r for r in recs)
 
 
+BASE_TASKS = {
+    "lint": "ruff check src/",
+    "typecheck": "mypy src/",
+    "test": "pytest tests/",
+}
+TIP = "Consider using ruff format instead of black"
+
+
+class TestRuffFormatTip:
+    def _recs(self, adapter, tmp_path, tasks, black_envs):
+        with (
+            patch.object(adapter, "_is_pixi_project", return_value=True),
+            patch.object(adapter, "_get_available_tasks", return_value=tasks),
+            patch.object(adapter, "_get_tool_version", return_value=None),
+            patch.object(
+                adapter,
+                "environments_providing_tool",
+                side_effect=lambda tool, wd=None: black_envs if tool == "black" else [],
+            ),
+        ):
+            info = adapter.detect_quality_environment(working_dir=str(tmp_path))
+        return info.recommendations
+
+    def test_no_black_no_tip(self, adapter, tmp_path):
+        assert TIP not in self._recs(adapter, tmp_path, BASE_TASKS, [])
+
+    def test_black_task_without_ruff_format_gives_tip(self, adapter, tmp_path):
+        tasks = {**BASE_TASKS, "fmt": "black src/"}
+        assert TIP in self._recs(adapter, tmp_path, tasks, [])
+
+    def test_black_declared_and_ruff_format_task_no_tip(self, adapter, tmp_path):
+        tasks = {**BASE_TASKS, "format": "ruff format src/"}
+        assert TIP not in self._recs(adapter, tmp_path, tasks, ["dev"])
+
+    def test_black_declared_only_gives_tip(self, adapter, tmp_path):
+        assert TIP in self._recs(adapter, tmp_path, BASE_TASKS, ["dev"])
+
+    def test_qa_shape_black_in_non_default_feature_with_ruff_format_check(
+        self, adapter, tmp_path
+    ):
+        tasks = {**BASE_TASKS, "format-check": "ruff format --check src/ tests/"}
+        assert TIP not in self._recs(adapter, tmp_path, tasks, ["dev"])
+
+
 class TestDetectUsesAnyEnvironment:
     def test_tool_in_quality_extended_only_does_not_make_project_suboptimal(
         self, adapter, tmp_path
