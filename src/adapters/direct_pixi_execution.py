@@ -27,6 +27,7 @@ from dataclasses import dataclass
 
 from core.payload_bounds import bound_parsed_output
 from core.ports import LoggingPort
+from core.subprocess_env import target_project_env
 
 _log = logging.getLogger(__name__)
 
@@ -502,6 +503,7 @@ class DirectPixiExecutionAdapter:
                 text=True,
                 cwd=working_dir,
                 timeout=timeout,
+                env=target_project_env(),
             )
 
             execution_time = time.time() - start_time
@@ -752,6 +754,7 @@ class DirectPixiExecutionAdapter:
                     text=True,
                     cwd=working_dir,
                     timeout=10,
+                    env=target_project_env(),
                 )
                 pixi_info_available = result.returncode == 0
                 pixi_info_output = result.stdout if pixi_info_available else None
@@ -1729,6 +1732,7 @@ class DirectPixiExecutionAdapter:
                         text=True,
                         cwd=working_dir,
                         timeout=10,
+                        env=target_project_env(),
                     )
                     if result.returncode == 0:
                         return result.stdout.strip().split("\n")[0]
