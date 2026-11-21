@@ -20,7 +20,10 @@ from pydantic import BaseModel
 # Add parent directory to path to access core modules
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from adapters.direct_pixi_execution import detect_typechecker
+from adapters.direct_pixi_execution import (
+    detect_typechecker,
+    without_covered_typechecker,
+)
 from core.container import Container
 from core.payload_bounds import bound_parsed_output
 from core.quality_orchestration_service import (
@@ -2452,9 +2455,23 @@ def quality_optimize_pixi_environment(
         if target_tools is None:
             target_tools = ["ruff", "mypy", "bandit", "pytest", "radon", "vulture"]
 
+        task_bodies = list(
+            pixi_adapter._get_available_tasks(
+                working_dir or pixi_adapter.working_dir
+            ).values()
+        )
+        uncovered = without_covered_typechecker(
+            set(target_tools) - env_info.available_tools, task_bodies
+        )
+
         # Optimize environment
         optimization_result = pixi_adapter.optimize_quality_environment(
-            required_tools=target_tools, working_dir=working_dir
+            required_tools=[
+                t
+                for t in target_tools
+                if t in env_info.available_tools or t in uncovered
+            ],
+            working_dir=working_dir,
         )
 
         # Generate task templates if requested
@@ -2473,7 +2490,7 @@ def quality_optimize_pixi_environment(
                         )
 
         # Analyze missing tools
-        missing_tools = set(target_tools) - env_info.available_tools
+        missing_tools = uncovered
         recommended_additions = []
         for tool in missing_tools:
             recommended_additions.append(

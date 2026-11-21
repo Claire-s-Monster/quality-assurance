@@ -21,7 +21,7 @@ import subprocess
 import tempfile
 import time
 from collections import deque
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, Iterable, List, Optional, Set
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -249,6 +249,75 @@ def detect_typechecker(body: Any) -> Optional[str]:
     """
     executable = typechecker_executable(body)
     return _TYPECHECKERS[executable] if executable else None
+
+
+_SHELL_SEPARATORS = frozenset({"&&", "||", ";", "|", "&"})
+_SHELL_C_FLAG = re.compile(r"-[A-Za-z]*c")
+_SHELLS = frozenset({"bash", "sh"})
+_NON_CHECK_FLAGS = frozenset({"--version", "--help", "-h"})
+
+
+def _pyright_executables(body: Any, depth: int = 0) -> Set[str]:
+    """pyright-family executables a task body really runs to check code.
+
+    Splits string bodies on shell separators and unwraps `bash|sh -c '...'`;
+    `--version`/`--help` invocations do not count. Coverage-only: execution
+    paths keep using detect_typechecker.
+    """
+    if isinstance(body, str):
+        try:
+            lexer = shlex.shlex(body, posix=True, punctuation_chars=True)
+            lexer.whitespace_split = True
+            tokens = list(lexer)
+        except ValueError:
+            return set()
+    elif isinstance(body, list):
+        tokens = [str(t) for t in body]
+    else:
+        return set()
+
+    segments: List[List[str]] = [[]]
+    for token in tokens:
+        if token in _SHELL_SEPARATORS:
+            segments.append([])
+        else:
+            segments[-1].append(token)
+
+    found: Set[str] = set()
+    for seg in segments:
+        if not seg:
+            continue
+        if Path(seg[0]).name in _SHELLS and depth < 3:
+            flag = next(
+                (i for i, t in enumerate(seg[1:-1], 1) if _SHELL_C_FLAG.fullmatch(t)),
+                None,
+            )
+            if flag is not None:
+                found |= _pyright_executables(seg[flag + 1], depth + 1)
+                continue
+        executable = typechecker_executable(seg)
+        if executable and _TYPECHECKERS[executable] == "pyright":
+            start, _ = _command_start(seg)
+            if not _NON_CHECK_FLAGS & set(seg[start + 1 :]):
+                found.add(executable)
+    return found
+
+
+def covering_pyright_executables(task_bodies: Iterable[Any]) -> Set[str]:
+    """pyright-family executables run by any of `task_bodies`."""
+    found: Set[str] = set()
+    for body in task_bodies:
+        found |= _pyright_executables(body)
+    return found
+
+
+def without_covered_typechecker(
+    missing: Set[str], task_bodies: Iterable[Any]
+) -> Set[str]:
+    """`missing` minus mypy when some task body actually runs pyright."""
+    if covering_pyright_executables(task_bodies):
+        return missing - {"mypy"}
+    return missing
 
 
 _RUFF_NON_CHECK_COMMANDS = frozenset(
@@ -1251,6 +1320,12 @@ class DirectPixiExecutionAdapter:
                 if self.environments_providing_tool(tool, working_dir)
             }
 
+            pyright_executables = covering_pyright_executables(available_tasks.values())
+            mypy_covered = "mypy" in missing_tools and bool(pyright_executables)
+            missing_tools = without_covered_typechecker(
+                missing_tools, available_tasks.values()
+            )
+
             # Assess environment health
             health = self._assess_environment_health(
                 available_tools, missing_tools, quality_tasks, declared_elsewhere
@@ -1264,6 +1339,16 @@ class DirectPixiExecutionAdapter:
                 health,
                 declared_elsewhere,
             )
+            # A failed version probe means the task's pyright did not resolve.
+            if (
+                mypy_covered
+                and "pyright" in pyright_executables
+                and "pyright" not in tool_versions
+            ):
+                recommendations.append(
+                    "typecheck task runs pyright but pyright was not found in "
+                    "the pixi environment: pixi add pyright"
+                )
 
             # Calculate performance indicators
             performance_indicators = self._calculate_performance_indicators(
