@@ -1456,7 +1456,7 @@ class DirectPixiExecutionAdapter:
                 covered_core_tools=covered_core,
             )
 
-            existing =self._quality_env_cache.get(cache_key)
+            existing = self._quality_env_cache.get(cache_key)
             if existing is None or existing[1] <= detection_start:
                 self._quality_env_cache.pop(cache_key, None)
                 self._quality_env_cache[cache_key] = (

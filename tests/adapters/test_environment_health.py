@@ -198,7 +198,9 @@ class TestPyrightCoversMypy:
         with (
             patch.object(adapter, "_is_pixi_project", return_value=True),
             patch.object(adapter, "_get_available_tasks", return_value=tasks),
-            patch.object(adapter, "_all_task_bodies", return_value=list(tasks.values())),
+            patch.object(
+                adapter, "_all_task_bodies", return_value=list(tasks.values())
+            ),
             patch.object(adapter, "_get_tool_version", return_value=None),
             patch.object(
                 adapter,
