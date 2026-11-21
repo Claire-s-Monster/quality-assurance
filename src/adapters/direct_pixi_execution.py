@@ -436,7 +436,9 @@ class DirectPixiExecutionAdapter:
         # Quality intelligence attributes
         # Keyed by resolved absolute working_dir -> (info, timestamp): the
         # result is project-specific and must never be served to another one.
-        self._quality_env_cache: Dict[str, tuple[QualityEnvironmentInfo, float]] = {}
+        self._quality_env_cache: Dict[
+            str, tuple[QualityEnvironmentInfo, float, tuple]
+        ] = {}
         self._cache_ttl: int = 300  # 5 minutes cache TTL
         self._cache_max_entries: int = 16
 
@@ -1330,6 +1332,9 @@ class DirectPixiExecutionAdapter:
         except (OSError, RuntimeError):
             cache_key = os.path.abspath(working_dir)
 
+        # Taken before probing so a mid-run manifest edit invalidates the entry.
+        fingerprint = self._manifest_fingerprint(cache_key)
+
         # Check cache first (per project)
         cached = self._cached_env_info(cache_key)
         if cached is not None:
@@ -1441,7 +1446,11 @@ class DirectPixiExecutionAdapter:
             existing = self._quality_env_cache.get(cache_key)
             if existing is None or existing[1] <= detection_start:
                 self._quality_env_cache.pop(cache_key, None)
-                self._quality_env_cache[cache_key] = (env_info, time.time())
+                self._quality_env_cache[cache_key] = (
+                    env_info,
+                    time.time(),
+                    fingerprint,
+                )
             while len(self._quality_env_cache) > self._cache_max_entries:
                 del self._quality_env_cache[next(iter(self._quality_env_cache))]
 
@@ -1739,11 +1748,30 @@ class DirectPixiExecutionAdapter:
         entry = self._quality_env_cache.get(cache_key)
         if entry is None:
             return None
-        info, timestamp = entry
-        if (time.time() - timestamp) < self._cache_ttl:
+        info, timestamp, fingerprint = entry
+        if (
+            time.time() - timestamp
+        ) < self._cache_ttl and fingerprint == self._manifest_fingerprint(cache_key):
             return info
         self._quality_env_cache.pop(cache_key, None)
         return None
+
+    _MANIFEST_FILES = ("pixi.toml", "pyproject.toml", "pixi.lock")
+
+    @classmethod
+    def _manifest_fingerprint(
+        cls, project_dir: str
+    ) -> tuple[tuple[int, int] | None, ...]:
+        """(mtime_ns, size) per manifest file via stat only; None if missing."""
+        result: list[tuple[int, int] | None] = []
+        for name in cls._MANIFEST_FILES:
+            try:
+                st = os.stat(os.path.join(project_dir, name))
+            except OSError:
+                result.append(None)
+            else:
+                result.append((st.st_mtime_ns, st.st_size))
+        return tuple(result)
 
     def _analyze_quality_tool(
         self,
