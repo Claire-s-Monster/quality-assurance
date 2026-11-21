@@ -199,14 +199,15 @@ class TestMypyRecommendationWhenTypeCheckCovered:
         env = self._manifest_env(tmp_path, tasks, "basedpyright")
         assert not any("pixi add" in r for r in env.recommendations)
 
-    def test_unreadable_manifest_gives_no_install_recommendation(self):
-        adapter = DirectPixiExecutionAdapter(logging=Mock(), working_dir="/tmp/project")
+    def test_unreadable_manifest_gives_no_install_recommendation(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[tool.pixi\nnot = valid toml\n")
+        adapter = DirectPixiExecutionAdapter(logging=Mock(), working_dir=str(tmp_path))
         adapter._is_pixi_project = Mock(return_value=True)
         adapter._get_available_tasks = Mock(return_value=self.PYRIGHT_TASKS)
         adapter._get_tool_version = Mock(return_value=None)
-        adapter.environments_providing_tool = Mock(return_value=None)
-        env = adapter.detect_quality_environment("/tmp/project")
-        assert not any("pixi add pyright" in r for r in env.recommendations)
+        assert adapter.environments_providing_tool("pyright", str(tmp_path)) is None
+        env = adapter.detect_quality_environment(str(tmp_path))
+        assert not any("pixi add" in r for r in env.recommendations)
 
     def test_no_type_checker_still_told_to_install_mypy(self):
         env = _detected_env({"lint": "ruff check ."})
