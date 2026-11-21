@@ -181,6 +181,76 @@ class TestRuffFormatTipTaskParsing:
         assert TIP in info.recommendations
 
 
+PYRIGHT_TASKS = {
+    "lint": "ruff check src/",
+    "typecheck": "pyright src/",
+    "test": "pytest tests/",
+    "security": "bandit -r src/",
+}
+
+
+class TestPyrightCoversMypy:
+    @staticmethod
+    def _no_bandit(tool, working_dir=None):
+        return [] if tool == "bandit" else ["x"]
+
+    def _detect(self, adapter, tmp_path, tasks, providers=None):
+        with (
+            patch.object(adapter, "_is_pixi_project", return_value=True),
+            patch.object(adapter, "_get_available_tasks", return_value=tasks),
+            patch.object(adapter, "_all_task_bodies", return_value=list(tasks.values())),
+            patch.object(adapter, "_get_tool_version", return_value=None),
+            patch.object(
+                adapter,
+                "environments_providing_tool",
+                side_effect=providers or (lambda tool, working_dir=None: ["x"]),
+            ),
+        ):
+            return adapter.detect_quality_environment(working_dir=str(tmp_path))
+
+    def test_pyright_task_without_mypy_is_optimal(self, adapter, tmp_path):
+        info = self._detect(adapter, tmp_path, PYRIGHT_TASKS)
+        assert "mypy" not in info.available_tools
+        assert info.environment_health == "optimal"
+
+    def test_missing_bandit_is_still_suboptimal(self, adapter, tmp_path):
+        tasks = {k: v for k, v in PYRIGHT_TASKS.items() if k != "security"}
+        info = self._detect(adapter, tmp_path, tasks, self._no_bandit)
+        assert info.environment_health == "suboptimal"
+
+    def test_health_score_same_for_pyright_and_mypy(self, adapter, tmp_path):
+        mypy_tasks = {**PYRIGHT_TASKS, "typecheck": "mypy src/"}
+        pyright = self._detect(adapter, tmp_path, PYRIGHT_TASKS)
+        mypy = self._detect(adapter, tmp_path, mypy_tasks)
+        assert adapter._calculate_health_score(pyright) == pytest.approx(
+            adapter._calculate_health_score(mypy)
+        )
+
+    def test_health_score_honours_declared_elsewhere(self, adapter, tmp_path):
+        tasks = {k: v for k, v in PYRIGHT_TASKS.items() if k != "security"}
+        elsewhere = self._detect(adapter, tmp_path, tasks)
+        other = tmp_path / "other"  # detection results are cached per directory
+        other.mkdir()
+        nowhere = self._detect(adapter, other, tasks, self._no_bandit)
+        assert adapter._calculate_health_score(
+            elsewhere
+        ) > adapter._calculate_health_score(nowhere)
+
+    def test_real_manifest_with_pyright_typecheck_task(self, adapter, tmp_path):
+        (tmp_path / "pixi.toml").write_text(
+            "[dependencies]\nruff = '*'\nbandit = '*'\npytest = '*'\npyright = '*'\n"
+            "[tasks]\n"
+            'lint = "ruff check src/"\n'
+            'typecheck = "pyright src/"\n'
+            'test = "pytest tests/"\n'
+            'security = "bandit -r src/"\n'
+        )
+        with patch.object(adapter, "_get_tool_version", return_value=None):
+            info = adapter.detect_quality_environment(working_dir=str(tmp_path))
+        assert info.environment_health == "optimal"
+        assert info.recommendations == []
+
+
 class TestDetectUsesAnyEnvironment:
     def test_tool_in_quality_extended_only_does_not_make_project_suboptimal(
         self, adapter, tmp_path
