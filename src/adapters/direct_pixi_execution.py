@@ -1319,7 +1319,7 @@ class DirectPixiExecutionAdapter:
             }
 
     def detect_quality_environment(
-        self, working_dir: str | None = None
+        self, working_dir: str | None = None, _recheck: bool = True
     ) -> QualityEnvironmentInfo:
         """
         Detect quality tools available in pixi environment.
@@ -1455,6 +1455,13 @@ class DirectPixiExecutionAdapter:
                 performance_indicators=performance_indicators,
                 covered_core_tools=covered_core,
             )
+
+            # The manifest changed while probing: redo once, and never cache a
+            # result that may span two manifest versions.
+            if self._manifest_fingerprint(cache_key) != fingerprint:
+                if _recheck:
+                    return self.detect_quality_environment(working_dir, _recheck=False)
+                return env_info
 
             existing = self._quality_env_cache.get(cache_key)
             if existing is None or existing[1] <= detection_start:
