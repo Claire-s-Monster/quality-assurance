@@ -23,9 +23,10 @@ import time
 from collections import deque
 from typing import Dict, Any, Iterable, List, Optional, Set
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core.payload_bounds import bound_parsed_output
+from core.pixi_platform import current_pixi_platform, target_key_matches
 from core.ports import LoggingPort
 from core.subprocess_env import target_project_env
 
@@ -402,6 +403,9 @@ class QualityEnvironmentInfo:
     tool_versions: Dict[str, str]
     missing_tools: Set[str]
     performance_indicators: Dict[str, Any]
+    # Core tools with no task here that still count as present: declared by
+    # another pixi environment, or mypy replaced by a pyright-family task.
+    covered_core_tools: Set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -436,7 +440,9 @@ class DirectPixiExecutionAdapter:
         # Quality intelligence attributes
         # Keyed by resolved absolute working_dir -> (info, timestamp): the
         # result is project-specific and must never be served to another one.
-        self._quality_env_cache: Dict[str, tuple[QualityEnvironmentInfo, float]] = {}
+        self._quality_env_cache: Dict[
+            str, tuple[QualityEnvironmentInfo, float, tuple]
+        ] = {}
         self._cache_ttl: int = 300  # 5 minutes cache TTL
         self._cache_max_entries: int = 16
 
@@ -1059,8 +1065,15 @@ class DirectPixiExecutionAdapter:
         for name in self._resolve_environment_features(config, environment) or []:
             tables.append(features.get(name, {}) or {})
 
+        host = current_pixi_platform()
         for table in tables:
-            scopes = [table, *((table.get("target", {}) or {}).values())]
+            targets = table.get("target", {}) or {}
+            # Unknown host: stay permissive and count every target table.
+            scopes = [table] + [
+                scope
+                for key, scope in targets.items()
+                if host is None or target_key_matches(str(key), host)
+            ]
             for scope in scopes:
                 for key in ("dependencies", "pypi-dependencies"):
                     declared = (scope.get(key, {}) or {}).keys()
@@ -1306,7 +1319,7 @@ class DirectPixiExecutionAdapter:
             }
 
     def detect_quality_environment(
-        self, working_dir: str | None = None
+        self, working_dir: str | None = None, _recheck: bool = True
     ) -> QualityEnvironmentInfo:
         """
         Detect quality tools available in pixi environment.
@@ -1329,6 +1342,9 @@ class DirectPixiExecutionAdapter:
             cache_key = str(Path(working_dir).resolve())
         except (OSError, RuntimeError):
             cache_key = os.path.abspath(working_dir)
+
+        # Taken before probing so a mid-run manifest edit invalidates the entry.
+        fingerprint = self._manifest_fingerprint(cache_key)
 
         # Check cache first (per project)
         cached = self._cached_env_info(cache_key)
@@ -1389,8 +1405,9 @@ class DirectPixiExecutionAdapter:
             )
 
             # Assess environment health
+            covered_core = declared_elsewhere | ({"mypy"} if mypy_covered else set())
             health = self._assess_environment_health(
-                available_tools, missing_tools, quality_tasks, declared_elsewhere
+                available_tools, missing_tools, quality_tasks, covered_core
             )
 
             # Every definition, not the by-name collapse in available_tasks.
@@ -1436,12 +1453,24 @@ class DirectPixiExecutionAdapter:
                 tool_versions=tool_versions,
                 missing_tools=missing_tools,
                 performance_indicators=performance_indicators,
+                covered_core_tools=covered_core,
             )
+
+            # The manifest changed while probing: redo once, and never cache a
+            # result that may span two manifest versions.
+            if self._manifest_fingerprint(cache_key) != fingerprint:
+                if _recheck:
+                    return self.detect_quality_environment(working_dir, _recheck=False)
+                return env_info
 
             existing = self._quality_env_cache.get(cache_key)
             if existing is None or existing[1] <= detection_start:
                 self._quality_env_cache.pop(cache_key, None)
-                self._quality_env_cache[cache_key] = (env_info, time.time())
+                self._quality_env_cache[cache_key] = (
+                    env_info,
+                    time.time(),
+                    fingerprint,
+                )
             while len(self._quality_env_cache) > self._cache_max_entries:
                 del self._quality_env_cache[next(iter(self._quality_env_cache))]
 
@@ -1654,9 +1683,10 @@ class DirectPixiExecutionAdapter:
     def _calculate_health_score(self, env_info: QualityEnvironmentInfo) -> float:
         """Calculate overall environment health score (0-100)."""
         # Tool availability (40% of score)
-        core_tools = {"ruff", "mypy", "bandit", "pytest"}
-        available_core = core_tools.intersection(env_info.available_tools)
-        tool_score = (len(available_core) / len(core_tools)) * 40
+        present = self._CORE_QUALITY_TOOLS & (
+            env_info.available_tools | env_info.covered_core_tools
+        )
+        tool_score = (len(present) / len(self._CORE_QUALITY_TOOLS)) * 40
 
         # Environment health (30% of score)
         health_scores = {"optimal": 30, "suboptimal": 20, "degraded": 5}
@@ -1739,11 +1769,30 @@ class DirectPixiExecutionAdapter:
         entry = self._quality_env_cache.get(cache_key)
         if entry is None:
             return None
-        info, timestamp = entry
-        if (time.time() - timestamp) < self._cache_ttl:
+        info, timestamp, fingerprint = entry
+        if (
+            time.time() - timestamp
+        ) < self._cache_ttl and fingerprint == self._manifest_fingerprint(cache_key):
             return info
         self._quality_env_cache.pop(cache_key, None)
         return None
+
+    _MANIFEST_FILES = ("pixi.toml", "pyproject.toml", "pixi.lock")
+
+    @classmethod
+    def _manifest_fingerprint(
+        cls, project_dir: str
+    ) -> tuple[tuple[int, int] | None, ...]:
+        """(mtime_ns, size) per manifest file via stat only; None if missing."""
+        result: list[tuple[int, int] | None] = []
+        for name in cls._MANIFEST_FILES:
+            try:
+                st = os.stat(os.path.join(project_dir, name))
+            except OSError:
+                result.append(None)
+            else:
+                result.append((st.st_mtime_ns, st.st_size))
+        return tuple(result)
 
     def _analyze_quality_tool(
         self,
@@ -1831,7 +1880,8 @@ class DirectPixiExecutionAdapter:
 
         Measured over the core gates only. A core tool with no task in the
         default environment still counts as present when another environment
-        declares it (`declared_elsewhere`, e.g. bandit in quality-extended).
+        declares it (e.g. bandit in quality-extended) or when a pyright-family
+        task covers it (mypy); both arrive in `declared_elsewhere`.
         `missing_tools` is accepted for call compatibility; only core tools
         absent from both `available_tools` and `declared_elsewhere` count.
         """

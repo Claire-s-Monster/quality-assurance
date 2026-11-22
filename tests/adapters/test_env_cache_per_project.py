@@ -135,6 +135,49 @@ class TestEnvCacheKeyedByProject:
         assert adapter._quality_env_cache[key] is newer
 
 
+class TestEnvCacheManifestFingerprint:
+    @staticmethod
+    def _rewrite(path, text, mtime_ns):
+        path.write_text(text)
+        os.utime(path, ns=(mtime_ns, mtime_ns))
+
+    def _prime(self, adapter, tmp_path):
+        self._rewrite(tmp_path / "pixi.toml", "a = 1\n", 1_000_000_000)
+        tasks_mock = Mock(return_value={"lint": "ruff check src/"})
+        version_mock = Mock(return_value=None)
+        _detect(adapter, tmp_path, tasks_mock, version_mock)
+        return tasks_mock, version_mock
+
+    def test_unchanged_manifest_still_hits(self, adapter, tmp_path):
+        tasks_mock, version_mock = self._prime(adapter, tmp_path)
+        _detect(adapter, tmp_path, tasks_mock, version_mock)
+        assert tasks_mock.call_count == 1
+
+    def test_size_change_invalidates(self, adapter, tmp_path):
+        tasks_mock, version_mock = self._prime(adapter, tmp_path)
+        self._rewrite(tmp_path / "pixi.toml", "a = 12345\n", 1_000_000_000)
+        _detect(adapter, tmp_path, tasks_mock, version_mock)
+        assert tasks_mock.call_count == 2
+
+    def test_mtime_change_invalidates(self, adapter, tmp_path):
+        tasks_mock, version_mock = self._prime(adapter, tmp_path)
+        self._rewrite(tmp_path / "pixi.toml", "a = 1\n", 2_000_000_000)
+        _detect(adapter, tmp_path, tasks_mock, version_mock)
+        assert tasks_mock.call_count == 2
+
+    def test_lockfile_change_invalidates(self, adapter, tmp_path):
+        tasks_mock, version_mock = self._prime(adapter, tmp_path)
+        self._rewrite(tmp_path / "pixi.lock", "version: 6\n", 3_000_000_000)
+        _detect(adapter, tmp_path, tasks_mock, version_mock)
+        assert tasks_mock.call_count == 2
+
+    def test_pyproject_change_invalidates(self, adapter, tmp_path):
+        tasks_mock, version_mock = self._prime(adapter, tmp_path)
+        self._rewrite(tmp_path / "pyproject.toml", "[tool.x]\n", 3_000_000_000)
+        _detect(adapter, tmp_path, tasks_mock, version_mock)
+        assert tasks_mock.call_count == 2
+
+
 def _lint_executor(tmp_path, body):
     executor = Mock()
     executor.working_dir = str(tmp_path)

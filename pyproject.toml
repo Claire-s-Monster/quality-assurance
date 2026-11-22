@@ -290,7 +290,6 @@ coverage-badge = ">=1.1.0"
 memory_profiler = ">=0.61.0"
 
 # Legacy development tools (backward compatibility)
-black = ">=23.0.0"       # Keep for projects that need it
 yamllint = ">=1.32.0"    # YAML linting
 
 # Documentation
